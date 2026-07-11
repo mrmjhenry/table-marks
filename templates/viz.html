@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OpenConjecture Map</title>
+<style>
+  :root {
+    --surface-1: #fcfcfb; --page: #f9f9f7;
+    --ink-1: #0b0b0b; --ink-2: #52514e; --ink-muted: #898781;
+    --grid: #e1e0d9; --baseline: #c3c2b7; --border: rgba(11,11,11,0.10);
+    --s1:#2a78d6; --s2:#1baf7a; --s3:#eda100; --s4:#008300;
+    --s5:#4a3aa7; --s6:#e34948; --s7:#e87ba4; --s8:#eb6834;
+    --edge: rgba(11,11,11,0.14); --edge-hi: rgba(11,11,11,0.55);
+    --panel-bg: rgba(252,252,251,0.96);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --surface-1: #1a1a19; --page: #0d0d0d;
+      --ink-1: #ffffff; --ink-2: #c3c2b7; --ink-muted: #898781;
+      --grid: #2c2c2a; --baseline: #383835; --border: rgba(255,255,255,0.10);
+      --s1:#3987e5; --s2:#199e70; --s3:#c98500; --s4:#008300;
+      --s5:#9085e9; --s6:#e66767; --s7:#d55181; --s8:#d95926;
+      --edge: rgba(255,255,255,0.10); --edge-hi: rgba(255,255,255,0.55);
+      --panel-bg: rgba(26,26,25,0.96);
+    }
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; overflow: hidden; }
+  body { font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+         background: var(--surface-1); color: var(--ink-1); }
+  #stage { position: absolute; inset: 0; cursor: grab; }
+  #stage.dragging { cursor: grabbing; }
+
+  #topbar { position: absolute; top: 0; left: 0; right: 0; display: flex; gap: 10px;
+    align-items: center; padding: 10px 14px; pointer-events: none; z-index: 5; flex-wrap: wrap; }
+  #topbar > * { pointer-events: auto; }
+  #topbar h1 { font-size: 15px; font-weight: 650; margin-right: 6px; }
+  #topbar .sub { color: var(--ink-muted); font-size: 12px; margin-right: 10px; }
+  .ctl { background: var(--panel-bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: 6px 10px; display: flex; align-items: center; gap: 7px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+  .ctl label { color: var(--ink-2); font-size: 12px; white-space: nowrap; }
+  #search { border: none; outline: none; background: transparent; color: var(--ink-1);
+    font: inherit; width: 220px; }
+  #search::placeholder { color: var(--ink-muted); }
+  input[type=range] { width: 110px; accent-color: var(--s1); }
+  input[type=checkbox] { accent-color: var(--s1); }
+  button.mini { font: inherit; font-size: 12px; color: var(--ink-2); background: transparent;
+    border: 1px solid var(--border); border-radius: 6px; padding: 3px 9px; cursor: pointer; }
+  button.mini:hover { color: var(--ink-1); border-color: var(--baseline); }
+  button.mini.on { color: var(--s1); border-color: var(--s1); }
+
+  #legend { position: absolute; left: 14px; bottom: 14px; z-index: 5;
+    background: var(--panel-bg); border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px 12px; box-shadow: 0 1px 6px rgba(0,0,0,0.08); }
+  #legend .row { display: flex; align-items: center; gap: 8px; padding: 2.5px 2px;
+    cursor: pointer; border-radius: 5px; user-select: none; }
+  #legend .row:hover { background: var(--grid); }
+  #legend .row.off { opacity: 0.32; }
+  #legend .swatch { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+  #legend .row .n { color: var(--ink-muted); margin-left: auto; padding-left: 10px;
+    font-variant-numeric: tabular-nums; }
+  #legend .cap { font-size: 11px; color: var(--ink-muted); margin-bottom: 5px; }
+
+  #tooltip { position: absolute; z-index: 8; pointer-events: none; display: none;
+    max-width: 320px; background: var(--panel-bg); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.12);
+    font-size: 12px; }
+  #tooltip .t { font-weight: 600; }
+  #tooltip .m { color: var(--ink-2); margin-top: 2px; }
+
+  #panel { position: absolute; top: 0; right: 0; bottom: 0; width: min(420px, 92vw);
+    z-index: 6; background: var(--panel-bg); border-left: 1px solid var(--border);
+    box-shadow: -4px 0 18px rgba(0,0,0,0.10); padding: 16px 18px; overflow-y: auto;
+    transform: translateX(105%); transition: transform 0.18s ease; }
+  #panel.open { transform: none; }
+  #panel .close { position: absolute; top: 10px; right: 12px; border: none; background: none;
+    color: var(--ink-muted); font-size: 18px; cursor: pointer; }
+  #panel h2 { font-size: 15px; line-height: 1.35; margin: 4px 24px 8px 0; }
+  #panel .meta { color: var(--ink-2); font-size: 12px; margin-bottom: 4px; }
+  #panel .scores { display: flex; gap: 14px; margin: 10px 0; }
+  #panel .scores .tile { border: 1px solid var(--border); border-radius: 8px; padding: 7px 11px; }
+  #panel .scores .v { font-size: 17px; font-weight: 650; }
+  #panel .scores .k { font-size: 11px; color: var(--ink-muted); }
+  #panel .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+  .chip { font-size: 11.5px; padding: 3px 9px; border-radius: 20px; cursor: pointer;
+    border: 1px solid var(--border); color: var(--ink-2); background: transparent; }
+  .chip:hover { border-color: var(--s1); color: var(--s1); }
+  .chip.active { background: var(--s1); border-color: var(--s1); color: #fff; }
+  #panel .stmt { font-size: 12.5px; white-space: pre-wrap; border-left: 3px solid var(--baseline);
+    padding: 4px 0 4px 12px; margin: 12px 0; color: var(--ink-1); }
+  #panel a { color: var(--s1); }
+  #panel .neigh { margin-top: 14px; }
+  #panel .neigh .cap, #panel .cap { font-size: 11px; color: var(--ink-muted);
+    text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+  #panel .nrow { padding: 6px 8px; border-radius: 6px; cursor: pointer; }
+  #panel .nrow:hover { background: var(--grid); }
+  #panel .nrow .nt { font-size: 12px; }
+  #panel .nrow .ns { font-size: 11px; color: var(--ink-muted); }
+
+  #status { position: absolute; left: 50%; top: 46%; transform: translate(-50%,-50%);
+    z-index: 4; color: var(--ink-muted); font-size: 13px; text-align: center; }
+  #hint { position: absolute; right: 14px; bottom: 14px; z-index: 4; color: var(--ink-muted);
+    font-size: 11px; pointer-events: none; }
+</style>
+</head>
+<body>
+<canvas id="stage"></canvas>
+<div id="status">computing layout…</div>
+
+<div id="topbar">
+  <h1>OpenConjecture Map</h1>
+  <span class="sub" id="counts"></span>
+  <div class="ctl"><input id="search" type="search" placeholder="Search titles &amp; objects…"></div>
+  <div class="ctl"><label><input type="checkbox" id="openOnly"> open only</label></div>
+  <div class="ctl"><label>min interest</label><input type="range" id="minInterest" min="0" max="0.9" step="0.05" value="0"><span id="minInterestV" style="font-variant-numeric:tabular-nums;color:var(--ink-2)">0.00</span></div>
+  <button class="mini" id="objToggle" title="Show mathematical objects as square nodes">show objects</button>
+  <button class="mini" id="clearBtn">reset</button>
+</div>
+
+<div id="legend"><div class="cap">arXiv category — click to filter</div></div>
+<div id="tooltip"></div>
+<div id="hint">drag to pan · scroll to zoom · click a node</div>
+
+<div id="panel">
+  <button class="close" id="panelClose">✕</button>
+  <div id="panelBody"></div>
+</div>
+
+<script>
+const GRAPH = __GRAPH_DATA__;
+
+/* ---------- category slots: top 7 + other ---------- */
+const catCount = {};
+GRAPH.nodes.forEach(n => { const c = n.cat || "uncategorized"; catCount[c] = (catCount[c]||0)+1; });
+const topCats = Object.entries(catCount).sort((a,b)=>b[1]-a[1]).slice(0,7).map(e=>e[0]);
+const catSlot = {}; topCats.forEach((c,i)=>catSlot[c]=i+1);
+const catOf = n => { const c = n.cat || "uncategorized"; return catSlot[c] ? c : "other"; };
+const otherCount = GRAPH.nodes.filter(n=>catOf(n)==="other").length;
+
+const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+let COLORS = {};
+function refreshColors(){
+  COLORS = {};
+  topCats.forEach((c,i)=>COLORS[c]=css("--s"+(i+1)));
+  COLORS["other"] = css("--ink-muted");
+}
+refreshColors();
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", ()=>{ refreshColors(); buildLegend(); draw(); });
+
+/* ---------- state ---------- */
+const nodes = GRAPH.nodes.map(n => ({...n, x: 0, y: 0, vx: 0, vy: 0, r: 2.6 + 6.4*Math.sqrt(Math.max(n.interest,0))}));
+const byId = {}; nodes.forEach(n => byId[n.id] = n);
+const edges = GRAPH.edges.filter(e => byId[e.s] && byId[e.t]);
+const neighbors = {}; // id -> [{id, shared, w}]
+edges.forEach(e => {
+  (neighbors[e.s] = neighbors[e.s]||[]).push({id: e.t, shared: e.shared, w: e.w});
+  (neighbors[e.t] = neighbors[e.t]||[]).push({id: e.s, shared: e.shared, w: e.w});
+});
+
+const catOff = new Set();
+let searchQ = "", openOnly = false, minInterest = 0, objectFilter = null;
+let selected = null, hovered = null;
+let showObjects = false;
+let objNodes = [], objEdges = [];  // bipartite extras
+
+function visible(n){
+  if (catOff.has(catOf(n))) return false;
+  if (openOnly && n.label !== "real_open_conjecture") return false;
+  if (n.interest < minInterest) return false;
+  if (objectFilter && !n.objects.includes(objectFilter)) return false;
+  if (searchQ){
+    const q = searchQ.toLowerCase();
+    if (!n.title.toLowerCase().includes(q) && !n.objects.some(o=>o.includes(q))) return false;
+  }
+  return true;
+}
+
+/* ---------- layout: grid-repulsion force sim ---------- */
+const W = () => innerWidth, H = () => innerHeight;
+function initPositions(list){
+  const R = Math.min(W(),H()) * 0.42;
+  list.forEach((n,i)=>{ const a = i*2.399963; const r = R*Math.sqrt(i/list.length);
+    n.x = W()/2 + r*Math.cos(a); n.y = H()/2 + r*Math.sin(a); n.vx = n.vy = 0; });
+}
+initPositions(nodes);
+
+let simNodes = nodes, simEdges = edges;
+let alpha = 1, ticking = false;
+
+function tick(){
+  const cell = 46, grid = new Map();
+  simNodes.forEach(n => {
+    const k = ((n.x/cell)|0) + "," + ((n.y/cell)|0);
+    (grid.get(k) || grid.set(k, []).get(k)).push(n);
+  });
+  const rep = 700 * alpha;
+  simNodes.forEach(n => {
+    const gx = (n.x/cell)|0, gy = (n.y/cell)|0;
+    for (let dx=-1; dx<=1; dx++) for (let dy=-1; dy<=1; dy++){
+      const bucket = grid.get((gx+dx)+","+(gy+dy));
+      if (!bucket) continue;
+      for (const m of bucket){
+        if (m === n) continue;
+        let ddx = n.x-m.x, ddy = n.y-m.y;
+        let d2 = ddx*ddx + ddy*ddy;
+        if (d2 > cell*cell) continue;
+        if (d2 < 1) { ddx = Math.random()-0.5; ddy = Math.random()-0.5; d2 = 1; }
+        const f = rep / d2;
+        n.vx += ddx*f*0.01; n.vy += ddy*f*0.01;
+      }
+    }
+  });
+  const springK = 0.02 * alpha;
+  simEdges.forEach(e => {
+    const a = byId[e.s] || e._s, b = byId[e.t] || e._t;
+    const rest = 34 + 60/(1+(e.w||1));
+    const dx = b.x-a.x, dy = b.y-a.y;
+    const d = Math.sqrt(dx*dx+dy*dy) || 1;
+    const f = springK * (d - rest) / d;
+    a.vx += dx*f; a.vy += dy*f; b.vx -= dx*f; b.vy -= dy*f;
+  });
+  const cx = W()/2, cy = H()/2;
+  simNodes.forEach(n => {
+    n.vx += (cx-n.x)*0.0012*alpha; n.vy += (cy-n.y)*0.0012*alpha;
+    n.vx *= 0.82; n.vy *= 0.82;
+    n.x += n.vx; n.y += n.vy;
+  });
+  alpha *= 0.995;
+}
+
+let tickCount = 0, targetTicks = 340;
+function runSim(){
+  ticking = true;
+  const step = () => {
+    for (let i=0;i<3;i++){ tick(); tickCount++; }
+    draw();
+    const st = document.getElementById("status");
+    if (tickCount < targetTicks && alpha > 0.02){
+      st.textContent = "computing layout… " + Math.min(99, (100*tickCount/targetTicks)|0) + "%";
+      requestAnimationFrame(step);
+    } else { st.style.display = "none"; ticking = false; draw(); }
+  };
+  requestAnimationFrame(step);
+}
+
+/* ---------- render ---------- */
+const canvas = document.getElementById("stage");
+const ctx = canvas.getContext("2d");
+let view = {x: 0, y: 0, k: 1};
+function resize(){ const d = devicePixelRatio||1;
+  canvas.width = W()*d; canvas.height = H()*d; canvas.style.width = W()+"px";
+  canvas.style.height = H()+"px"; ctx.setTransform(d,0,0,d,0,0); draw(); }
+addEventListener("resize", resize);
+
+function worldToScreen(p){ return {x: (p.x+view.x)*view.k, y: (p.y+view.y)*view.k}; }
+function screenToWorld(p){ return {x: p.x/view.k - view.x, y: p.y/view.k - view.y}; }
+
+function highlightSet(){
+  const focus = hovered || selected;
+  if (!focus) return null;
+  const s = new Set([focus.id]);
+  (neighbors[focus.id]||[]).forEach(m => s.add(m.id));
+  if (showObjects && focus._objLinks) focus._objLinks.forEach(id => s.add(id));
+  return s;
+}
+
+function draw(){
+  ctx.clearRect(0,0,W(),H());
+  const hi = highlightSet();
+  const focusId = (hovered||selected||{}).id;
+
+  ctx.lineWidth = 1;
+  simEdges.forEach(e => {
+    const a = byId[e.s] || e._s, b = byId[e.t] || e._t;
+    const va = a.isObj || visible(a), vb = b.isObj || visible(b);
+    if (!va || !vb) return;
+    const isHi = hi && (e.s===focusId || e.t===focusId || (e._s&&e._s.id===focusId) || (e._t&&e._t.id===focusId));
+    if (hi && !isHi) return;
+    ctx.strokeStyle = isHi ? css("--edge-hi") : css("--edge");
+    const pa = worldToScreen(a), pb = worldToScreen(b);
+    ctx.beginPath(); ctx.moveTo(pa.x,pa.y); ctx.lineTo(pb.x,pb.y); ctx.stroke();
+  });
+
+  simNodes.forEach(n => {
+    if (!n.isObj && !visible(n)) return;
+    const dim = hi && !hi.has(n.id);
+    const p = worldToScreen(n);
+    if (p.x < -20 || p.y < -20 || p.x > W()+20 || p.y > H()+20) return;
+    ctx.globalAlpha = dim ? 0.14 : 1;
+    if (n.isObj){
+      const s = Math.min(11, 3.4 + 1.4*Math.sqrt(n.df));
+      ctx.fillStyle = css("--ink-2");
+      ctx.fillRect(p.x-s/2, p.y-s/2, s, s);
+    } else {
+      ctx.beginPath(); ctx.arc(p.x, p.y, n.r*Math.min(view.k,1.6), 0, 7);
+      ctx.fillStyle = COLORS[catOf(n)];
+      ctx.fill();
+      ctx.lineWidth = 1; ctx.strokeStyle = css("--surface-1"); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  });
+
+  if (showObjects){
+    ctx.font = "10.5px system-ui, sans-serif";
+    ctx.fillStyle = css("--ink-2");
+    objNodes.forEach(n => {
+      if (n.df < 12 && !(hi && hi.has(n.id))) return;
+      const p = worldToScreen(n);
+      ctx.fillText(n.name, p.x + 8, p.y + 3);
+    });
+  }
+  const focus = hovered || selected;
+  if (focus && !focus.isObj && visible(focus)){
+    const p = worldToScreen(focus);
+    ctx.beginPath(); ctx.arc(p.x, p.y, focus.r*Math.min(view.k,1.6)+3, 0, 7);
+    ctx.lineWidth = 2; ctx.strokeStyle = css("--ink-1"); ctx.stroke();
+  }
+}
+
+/* ---------- interaction ---------- */
+let dragging = false, dragMoved = false, last = null;
+canvas.addEventListener("pointerdown", e => { dragging = true; dragMoved = false;
+  last = {x:e.clientX, y:e.clientY}; canvas.classList.add("dragging"); });
+addEventListener("pointerup", e => {
+  canvas.classList.remove("dragging");
+  if (dragging && !dragMoved) handleClick(e);
+  dragging = false;
+});
+addEventListener("pointermove", e => {
+  if (dragging){
+    const dx = e.clientX-last.x, dy = e.clientY-last.y;
+    if (Math.abs(dx)+Math.abs(dy) > 3) dragMoved = true;
+    view.x += dx/view.k; view.y += dy/view.k;
+    last = {x:e.clientX, y:e.clientY}; draw(); return;
+  }
+  const n = pick(e.clientX, e.clientY);
+  if (n !== hovered){ hovered = n; draw(); }
+  const tt = document.getElementById("tooltip");
+  if (n){
+    tt.style.display = "block";
+    tt.style.left = Math.min(e.clientX+14, innerWidth-330)+"px";
+    tt.style.top = (e.clientY+14)+"px";
+    tt.innerHTML = n.isObj
+      ? `<div class="t">${esc(n.name)}</div><div class="m">object · in ${n.df} conjectures</div>`
+      : `<div class="t">${esc(n.title)}</div><div class="m">${esc(n.cat||"uncategorized")} · interest ${n.interest.toFixed(2)} · ${n.objects.slice(0,4).map(esc).join(", ")}</div>`;
+  } else tt.style.display = "none";
+});
+canvas.addEventListener("wheel", e => {
+  e.preventDefault();
+  const f = Math.exp(-e.deltaY*0.0016);
+  const before = screenToWorld({x:e.clientX, y:e.clientY});
+  view.k = Math.max(0.15, Math.min(6, view.k*f));
+  const after = screenToWorld({x:e.clientX, y:e.clientY});
+  view.x += after.x-before.x; view.y += after.y-before.y;
+  draw();
+}, {passive:false});
+
+function pick(sx, sy){
+  const w = screenToWorld({x:sx, y:sy});
+  let best = null, bestD = 144;
+  simNodes.forEach(n => {
+    if (!n.isObj && !visible(n)) return;
+    const dx = n.x-w.x, dy = n.y-w.y, d2 = (dx*dx+dy*dy)*view.k*view.k;
+    const rr = Math.max(n.isObj ? 7 : n.r*view.k, 7);
+    if (d2 < rr*rr && d2 < bestD){ best = n; bestD = d2; }
+  });
+  return best;
+}
+function handleClick(e){
+  const n = pick(e.clientX, e.clientY);
+  if (n && n.isObj){ setObjectFilter(n.name); return; }
+  selected = n;
+  if (n) openPanel(n); else closePanel();
+  draw();
+}
+
+/* ---------- panel ---------- */
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function openPanel(n){
+  const nb = (neighbors[n.id]||[]).slice().sort((a,b)=>b.w-a.w).slice(0,8);
+  document.getElementById("panelBody").innerHTML = `
+    <div class="meta">${esc(n.cat||"uncategorized")} · ${esc(n.label.replaceAll("_"," "))}</div>
+    <h2>${esc(n.title)}</h2>
+    <div class="meta">${n.authors.map(esc).join(", ")}</div>
+    <div class="scores">
+      <div class="tile"><div class="v">${n.interest.toFixed(2)}</div><div class="k">interestingness</div></div>
+      <div class="tile"><div class="v">${n.viability.toFixed(2)}</div><div class="k">viability</div></div>
+    </div>
+    <div class="cap">objects — click to filter the map</div>
+    <div class="chips">${n.objects.map(o =>
+      `<button class="chip${o===objectFilter?" active":""}" data-obj="${esc(o)}">${esc(o)}</button>`).join("")}</div>
+    <div class="stmt">${esc(n.text)}</div>
+    <a href="${esc(n.url)}" target="_blank" rel="noopener">open paper on arXiv ↗</a>
+    <div class="neigh"><div class="cap">most related conjectures</div>
+      ${nb.map(m => { const t = byId[m.id]; return `
+        <div class="nrow" data-id="${esc(m.id)}">
+          <div class="nt">${esc(t.title)}</div>
+          <div class="ns">shares: ${m.shared.map(esc).join(", ")}</div>
+        </div>`; }).join("") || '<div class="meta">no strong links</div>'}
+    </div>`;
+  document.getElementById("panel").classList.add("open");
+  document.querySelectorAll("#panel .chip").forEach(el =>
+    el.onclick = () => setObjectFilter(el.dataset.obj === objectFilter ? null : el.dataset.obj));
+  document.querySelectorAll("#panel .nrow").forEach(el =>
+    el.onclick = () => { const t = byId[el.dataset.id]; if (t){ selected = t; centerOn(t); openPanel(t); draw(); } });
+}
+function closePanel(){ document.getElementById("panel").classList.remove("open"); }
+document.getElementById("panelClose").onclick = () => { selected = null; closePanel(); draw(); };
+function centerOn(n){ view.x = W()/2/view.k - n.x; view.y = H()/2/view.k - n.y; }
+
+/* ---------- legend & controls ---------- */
+function buildLegend(){
+  const lg = document.getElementById("legend");
+  lg.querySelectorAll(".row").forEach(r=>r.remove());
+  const rows = topCats.map(c => [c, catCount[c]]).concat([["other", otherCount]]);
+  rows.forEach(([c, count]) => {
+    const div = document.createElement("div");
+    div.className = "row" + (catOff.has(c) ? " off" : "");
+    div.innerHTML = `<span class="swatch" style="background:${COLORS[c]}"></span>
+      <span>${esc(c)}</span><span class="n">${count}</span>`;
+    div.onclick = () => { catOff.has(c) ? catOff.delete(c) : catOff.add(c);
+      div.classList.toggle("off"); updateCounts(); draw(); };
+    lg.appendChild(div);
+  });
+}
+buildLegend();
+
+function updateCounts(){
+  const v = nodes.filter(visible).length;
+  document.getElementById("counts").textContent =
+    `${v} of ${nodes.length} conjectures · ${edges.length} links`;
+}
+updateCounts();
+
+document.getElementById("search").addEventListener("input", e => { searchQ = e.target.value.trim(); updateCounts(); draw(); });
+document.getElementById("openOnly").addEventListener("change", e => { openOnly = e.target.checked; updateCounts(); draw(); });
+document.getElementById("minInterest").addEventListener("input", e => {
+  minInterest = +e.target.value;
+  document.getElementById("minInterestV").textContent = minInterest.toFixed(2);
+  updateCounts(); draw(); });
+document.getElementById("clearBtn").onclick = () => {
+  searchQ = ""; document.getElementById("search").value = "";
+  openOnly = false; document.getElementById("openOnly").checked = false;
+  minInterest = 0; document.getElementById("minInterest").value = 0;
+  document.getElementById("minInterestV").textContent = "0.00";
+  catOff.clear(); setObjectFilter(null); selected = null; closePanel();
+  buildLegend(); updateCounts(); view = {x:0,y:0,k:1}; draw(); };
+
+function setObjectFilter(name){
+  objectFilter = name;
+  updateCounts();
+  if (selected) openPanel(selected);
+  draw();
+}
+
+/* ---------- bipartite object toggle ---------- */
+const OBJ_LIMIT = 300;
+document.getElementById("objToggle").onclick = function(){
+  showObjects = !showObjects;
+  this.classList.toggle("on", showObjects);
+  if (showObjects && objNodes.length === 0){
+    const top = GRAPH.objects.filter(o => !o.ubiquitous && o.df >= 3).slice(0, OBJ_LIMIT);
+    const objIds = new Set();
+    objNodes = top.map(o => ({id: "obj:"+o.name, name: o.name, df: o.df, isObj: true,
+      x: W()/2+(Math.random()-0.5)*200, y: H()/2+(Math.random()-0.5)*200, vx:0, vy:0}));
+    objNodes.forEach(o => objIds.add(o.id));
+    const objById = {}; objNodes.forEach(o => objById[o.id] = o);
+    objEdges = [];
+    nodes.forEach(n => {
+      n._objLinks = [];
+      n.objects.forEach(name => {
+        const oid = "obj:"+name;
+        if (objIds.has(oid)){
+          objEdges.push({s: n.id, t: oid, w: 2, _t: objById[oid], shared: [name]});
+          n._objLinks.push(oid);
+          (neighbors[n.id] = neighbors[n.id]||[]);
+        }
+      });
+    });
+    objNodes.forEach(o => byId[o.id] = o);
+  }
+  if (showObjects){ simNodes = nodes.concat(objNodes); simEdges = objEdges; }
+  else { simNodes = nodes; simEdges = edges; }
+  alpha = 0.6; tickCount = 0; targetTicks = 220;
+  document.getElementById("status").style.display = "block";
+  if (!ticking) runSim();
+};
+
+/* ---------- go ---------- */
+resize();
+runSim();
+</script>
+</body>
+</html>
