@@ -16,6 +16,7 @@ OUT = ROOT / "data" / "conjectures.parquet"
 
 MODEL_TEXT_MAX_CHARS = 6000
 DISPLAY_TEXT_MAX_CHARS = 4000
+RENDER_TEX_MAX_CHARS = 4000
 
 
 def clean_latex(tex: str) -> str:
@@ -27,6 +28,16 @@ def clean_latex(tex: str) -> str:
     s = re.sub(r"\\(?:begin|end)\{[^}]*\}", " ", s)
     s = re.sub(r"\\(?:textup|textrm|textit|textbf|emph|mbox|text)\{([^{}]*)\}", r"\1", s)
     s = re.sub(r"\\(?:medskip|smallskip|bigskip|noindent|par)\b", " ", s)
+    s = re.sub(r"[ \t]+", " ", s)
+    s = re.sub(r"\n{3,}", "\n\n", s)
+    return s.strip()
+
+
+def clean_for_render(tex: str) -> str:
+    """Gentle cleaning for KaTeX rendering — keeps $…$ and math environments."""
+    s = re.sub(r"(?<!\\)%.*", "", tex)
+    s = re.sub(r"\\label\{[^}]*\}", "", s)
+    s = re.sub(r"\\(?:cite|citep|citet|cref|Cref|ref|eqref)\*?(?:\[[^\]]*\])?\{[^}]*\}", "[ref]", s)
     s = re.sub(r"[ \t]+", " ", s)
     s = re.sub(r"\n{3,}", "\n\n", s)
     return s.strip()
@@ -58,6 +69,14 @@ def main():
     df["model_text"] = df["display_text"].str.slice(0, MODEL_TEXT_MAX_CHARS)
     df["display_text"] = df["display_text"].str.slice(0, DISPLAY_TEXT_MAX_CHARS)
 
+    # For KaTeX rendering: prefer gently-cleaned body_tex (math intact).
+    # Does NOT feed the content hash — extraction cache keys stay stable.
+    df["render_tex"] = [
+        clean_for_render(bt)[:RENDER_TEX_MAX_CHARS]
+        if isinstance(bt, str) and bt.strip() else ""
+        for bt in df["body_tex"]
+    ]
+
     # Dedupe restated conjectures across papers by normalized title+text hash
     df["chash"] = [
         hashlib.sha256(norm_for_hash(t, x).encode()).hexdigest()[:16]
@@ -80,7 +99,7 @@ def main():
         "thash", "arxiv_id", "all_arxiv_ids", "title", "authors", "primary_category",
         "categories", "published_at", "abs_url", "latest_label",
         "latest_interestingness_score", "latest_viability_score",
-        "model_text", "display_text",
+        "model_text", "display_text", "render_tex",
     ]].rename(columns={"thash": "content_hash"})
 
     OUT.parent.mkdir(exist_ok=True)

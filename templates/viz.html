@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>OpenConjecture Map</title>
+<style>__KATEX_CSS__</style>
 <style>
   :root {
     --surface-1: #fcfcfb; --page: #f9f9f7;
@@ -90,7 +91,11 @@
   .chip.active { background: var(--s1); border-color: var(--s1); color: #fff; }
   .chip .tg { opacity: 0.6; margin-right: 4px; font-size: 9px; }
   #panel .stmt { font-size: 12.5px; white-space: pre-wrap; border-left: 3px solid var(--baseline);
-    padding: 4px 0 4px 12px; margin: 12px 0; color: var(--ink-1); }
+    padding: 4px 0 4px 12px; margin: 12px 0; color: var(--ink-1); overflow-x: auto; }
+  #panel .stmt .katex-display { margin: 6px 0; }
+  #panel .path-hop { padding: 7px 8px; border-left: 3px solid var(--s1); margin: 8px 0; border-radius: 0 6px 6px 0; }
+  #panel .path-hop:hover { background: var(--grid); cursor: pointer; }
+  #panel .path-via { font-size: 11px; color: var(--ink-muted); margin: 2px 0 2px 14px; }
   #panel a { color: var(--s1); }
   #panel .neigh { margin-top: 14px; }
   #panel .neigh .cap, #panel .cap { font-size: 11px; color: var(--ink-muted);
@@ -122,13 +127,14 @@
 
 <div id="legend"><div class="cap">arXiv category — click to filter</div></div>
 <div id="tooltip"></div>
-<div id="hint">drag to pan · scroll to zoom · click a node</div>
+<div id="hint">drag to pan · scroll to zoom · click a node · shift-click a second node for a path</div>
 
 <div id="panel">
   <button class="close" id="panelClose">✕</button>
   <div id="panelBody"></div>
 </div>
 
+<script>__KATEX_JS__</script>
 <script>
 const GRAPH = __GRAPH_DATA__;
 
@@ -170,6 +176,43 @@ let searchQ = "", openOnly = false, minInterest = 0, objectFilter = null;
 let selected = null, hovered = null;
 let showObjects = false;
 let objNodes = [], objEdges = [];  // bipartite extras
+let path = null;                   // {ids:[...], nodeSet:Set, edgeKeys:Set}
+
+const ekey = (a, b) => a < b ? a + "|" + b : b + "|" + a;
+
+/* ---------- shareable URLs: state <-> location.hash ---------- */
+let restoring = false, wantObjects = false;
+function writeHash(){
+  if (restoring) return;
+  const p = new URLSearchParams();
+  if (selected && !selected.isObj) p.set("sel", selected.id);
+  if (catOff.size) p.set("cat", [...catOff].join("~"));
+  if (searchQ) p.set("q", searchQ);
+  if (openOnly) p.set("open", "1");
+  if (minInterest) p.set("mi", String(minInterest));
+  if (objectFilter) p.set("obj", objectFilter);
+  if (showObjects) p.set("so", "1");
+  const h = p.toString();
+  history.replaceState(null, "", h ? "#" + h : location.pathname + location.search);
+}
+function readHash(){
+  if (!location.hash) return;
+  restoring = true;
+  const p = new URLSearchParams(location.hash.slice(1));
+  (p.get("cat") || "").split("~").filter(Boolean).forEach(c => catOff.add(c));
+  searchQ = p.get("q") || "";
+  document.getElementById("search").value = searchQ;
+  openOnly = p.get("open") === "1";
+  document.getElementById("openOnly").checked = openOnly;
+  minInterest = +(p.get("mi") || 0);
+  document.getElementById("minInterest").value = minInterest;
+  document.getElementById("minInterestV").textContent = minInterest.toFixed(2);
+  objectFilter = p.get("obj") || null;
+  wantObjects = p.get("so") === "1";
+  const sel = p.get("sel");
+  if (sel && byId[sel]) selected = byId[sel];
+  restoring = false;
+}
 
 function visible(n){
   if (catOff.has(catOf(n))) return false;
@@ -246,7 +289,14 @@ function runSim(){
     if (tickCount < targetTicks && alpha > 0.02){
       st.textContent = "computing layout… " + Math.min(99, (100*tickCount/targetTicks)|0) + "%";
       requestAnimationFrame(step);
-    } else { st.style.display = "none"; ticking = false; draw(); }
+    } else {
+      st.style.display = "none"; ticking = false;
+      if (wantObjects && !showObjects){ wantObjects = false; document.getElementById("objToggle").click(); return; }
+      if (selected && !document.getElementById("panel").classList.contains("open")){
+        centerOn(selected); openPanel(selected);
+      }
+      draw();
+    }
   };
   requestAnimationFrame(step);
 }
@@ -282,16 +332,21 @@ function draw(){
     const a = byId[e.s] || e._s, b = byId[e.t] || e._t;
     const va = a.isObj || visible(a), vb = b.isObj || visible(b);
     if (!va || !vb) return;
-    const isHi = hi && (e.s===focusId || e.t===focusId || (e._s&&e._s.id===focusId) || (e._t&&e._t.id===focusId));
-    if (hi && !isHi) return;
-    ctx.strokeStyle = isHi ? css("--edge-hi") : css("--edge");
+    if (path){
+      if (!path.edgeKeys.has(ekey(e.s, e.t))) return;
+      ctx.lineWidth = 2.5; ctx.strokeStyle = css("--edge-hi");
+    } else {
+      const isHi = hi && (e.s===focusId || e.t===focusId || (e._s&&e._s.id===focusId) || (e._t&&e._t.id===focusId));
+      if (hi && !isHi) return;
+      ctx.lineWidth = 1; ctx.strokeStyle = isHi ? css("--edge-hi") : css("--edge");
+    }
     const pa = worldToScreen(a), pb = worldToScreen(b);
     ctx.beginPath(); ctx.moveTo(pa.x,pa.y); ctx.lineTo(pb.x,pb.y); ctx.stroke();
   });
 
   simNodes.forEach(n => {
     if (!n.isObj && !visible(n)) return;
-    const dim = hi && !hi.has(n.id);
+    const dim = path ? !path.nodeSet.has(n.id) : (hi && !hi.has(n.id));
     const p = worldToScreen(n);
     if (p.x < -20 || p.y < -20 || p.x > W()+20 || p.y > H()+20) return;
     ctx.globalAlpha = dim ? 0.14 : 1;
@@ -389,9 +444,75 @@ function pick(sx, sy){
 function handleClick(e){
   const n = pick(e.clientX, e.clientY);
   if (n && n.isObj){ setObjectFilter(n.name); return; }
+  if (n && e.shiftKey && selected && !selected.isObj && n !== selected){
+    computePath(selected, n); return;
+  }
+  path = null;
   selected = n;
   if (n) openPanel(n); else closePanel();
+  writeHash(); draw();
+}
+
+/* ---------- path finding: Dijkstra on inverted edge weights ---------- */
+function computePath(a, b){
+  const dist = {[a.id]: 0}, prev = {}, done = new Set();
+  const Q = [[0, a.id]];  // binary heap not needed at this size
+  while (Q.length){
+    let bi = 0;
+    for (let i = 1; i < Q.length; i++) if (Q[i][0] < Q[bi][0]) bi = i;
+    const [d, u] = Q.splice(bi, 1)[0];
+    if (done.has(u)) continue;
+    done.add(u);
+    if (u === b.id) break;
+    (neighbors[u] || []).forEach(m => {
+      const nd = d + 1 / (m.w + 0.001);   // strong edges are cheap
+      if (nd < (dist[m.id] ?? Infinity)){
+        dist[m.id] = nd; prev[m.id] = u; Q.push([nd, m.id]);
+      }
+    });
+  }
+  if (!(b.id in prev) && a.id !== b.id && !done.has(b.id)){
+    path = null;
+    openPathPanel(a, b, null);
+    draw();
+    return;
+  }
+  const ids = [b.id];
+  while (ids[0] !== a.id) ids.unshift(prev[ids[0]]);
+  const edgeKeys = new Set();
+  for (let i = 0; i + 1 < ids.length; i++) edgeKeys.add(ekey(ids[i], ids[i + 1]));
+  path = {ids, nodeSet: new Set(ids), edgeKeys};
+  openPathPanel(a, b, ids);
   draw();
+}
+
+function sharedBetween(u, v){
+  const m = (neighbors[u] || []).find(x => x.id === v);
+  return m ? m.shared : [];
+}
+
+function openPathPanel(a, b, ids){
+  let body;
+  if (!ids){
+    body = `<div class="cap">path</div><h2>No path found</h2>
+      <div class="meta">No chain of shared entities connects these two conjectures
+      (one may be outside the giant component).</div>`;
+  } else {
+    body = `<div class="cap">path · ${ids.length - 1} hop${ids.length > 2 ? "s" : ""}</div>
+      <h2>From “${esc(a.title)}” to “${esc(b.title)}”</h2>` +
+      ids.map((id, i) => {
+        const t = byId[id];
+        const via = i > 0
+          ? `<div class="path-via">↓ shares: ${sharedBetween(ids[i - 1], id).map(esc).join(", ")}</div>` : "";
+        return via + `<div class="path-hop" data-id="${esc(id)}">
+          <div class="nt">${i + 1}. ${esc(t.title)}</div>
+          <div class="ns">${esc(t.cat || "uncategorized")}</div></div>`;
+      }).join("");
+  }
+  document.getElementById("panelBody").innerHTML = body;
+  document.getElementById("panel").classList.add("open");
+  document.querySelectorAll("#panel .path-hop").forEach(el =>
+    el.onclick = () => { const t = byId[el.dataset.id]; if (t){ path = null; selected = t; centerOn(t); openPanel(t); writeHash(); draw(); } });
 }
 
 /* ---------- panel ---------- */
@@ -409,7 +530,7 @@ function openPanel(n){
     <div class="cap">entities — click to filter · ■ structure ◆ invariant ≈ property ★ statement</div>
     <div class="chips">${n.objects.map(o =>
       `<button class="chip${o===objectFilter?" active":""}" data-obj="${esc(o)}" title="${typeOf(o)}"><span class="tg">${TYPE_GLYPH[typeOf(o)]}</span>${esc(o)}</button>`).join("")}</div>
-    <div class="stmt">${esc(n.text)}</div>
+    <div class="stmt">${esc(n.tex || n.text)}</div>
     <a href="${esc(n.url)}" target="_blank" rel="noopener">open paper on arXiv ↗</a>
     <div class="neigh"><div class="cap">most related conjectures</div>
       ${nb.map(m => { const t = byId[m.id]; return `
@@ -419,6 +540,24 @@ function openPanel(n){
         </div>`; }).join("") || '<div class="meta">no strong links</div>'}
     </div>`;
   document.getElementById("panel").classList.add("open");
+  const stmtEl = document.querySelector("#panel .stmt");
+  if (stmtEl && n.tex && window.renderMathInElement){
+    try {
+      renderMathInElement(stmtEl, {
+        throwOnError: false, errorColor: "var(--s6)",
+        delimiters: [
+          {left: "$$", right: "$$", display: true},
+          {left: "\\[", right: "\\]", display: true},
+          {left: "\\begin{equation}", right: "\\end{equation}", display: true},
+          {left: "\\begin{equation*}", right: "\\end{equation*}", display: true},
+          {left: "\\begin{align}", right: "\\end{align}", display: true},
+          {left: "\\begin{align*}", right: "\\end{align*}", display: true},
+          {left: "$", right: "$", display: false},
+          {left: "\\(", right: "\\)", display: false},
+        ],
+      });
+    } catch (e) { stmtEl.textContent = n.text; }
+  }
   document.querySelectorAll("#panel .chip").forEach(el =>
     el.onclick = () => setObjectFilter(el.dataset.obj === objectFilter ? null : el.dataset.obj));
   document.querySelectorAll("#panel .nrow").forEach(el =>
@@ -439,7 +578,7 @@ function buildLegend(){
     div.innerHTML = `<span class="swatch" style="background:${COLORS[c]}"></span>
       <span>${esc(c)}</span><span class="n">${count}</span>`;
     div.onclick = () => { catOff.has(c) ? catOff.delete(c) : catOff.add(c);
-      div.classList.toggle("off"); updateCounts(); draw(); };
+      div.classList.toggle("off"); updateCounts(); writeHash(); draw(); };
     lg.appendChild(div);
   });
 }
@@ -452,24 +591,28 @@ function updateCounts(){
 }
 updateCounts();
 
-document.getElementById("search").addEventListener("input", e => { searchQ = e.target.value.trim(); updateCounts(); draw(); });
-document.getElementById("openOnly").addEventListener("change", e => { openOnly = e.target.checked; updateCounts(); draw(); });
+document.getElementById("search").addEventListener("input", e => { searchQ = e.target.value.trim(); updateCounts(); writeHash(); draw(); });
+document.getElementById("openOnly").addEventListener("change", e => { openOnly = e.target.checked; updateCounts(); writeHash(); draw(); });
 document.getElementById("minInterest").addEventListener("input", e => {
   minInterest = +e.target.value;
   document.getElementById("minInterestV").textContent = minInterest.toFixed(2);
-  updateCounts(); draw(); });
+  updateCounts(); writeHash(); draw(); });
 document.getElementById("clearBtn").onclick = () => {
   searchQ = ""; document.getElementById("search").value = "";
   openOnly = false; document.getElementById("openOnly").checked = false;
   minInterest = 0; document.getElementById("minInterest").value = 0;
   document.getElementById("minInterestV").textContent = "0.00";
-  catOff.clear(); setObjectFilter(null); selected = null; closePanel();
-  buildLegend(); updateCounts(); view = {x:0,y:0,k:1}; draw(); };
+  catOff.clear(); path = null; setObjectFilter(null); selected = null; closePanel();
+  buildLegend(); updateCounts(); view = {x:0,y:0,k:1}; writeHash(); draw(); };
+addEventListener("keydown", e => {
+  if (e.key === "Escape" && path){ path = null; closePanel(); draw(); }
+});
 
 function setObjectFilter(name){
   objectFilter = name;
   updateCounts();
   if (selected) openPanel(selected);
+  writeHash();
   draw();
 }
 
@@ -478,6 +621,7 @@ const OBJ_LIMIT = 300;
 document.getElementById("objToggle").onclick = function(){
   showObjects = !showObjects;
   this.classList.toggle("on", showObjects);
+  writeHash();
   if (showObjects && objNodes.length === 0){
     const top = GRAPH.objects.filter(o => !o.ubiquitous && o.df >= 3).slice(0, OBJ_LIMIT);
     const objIds = new Set();
@@ -507,6 +651,9 @@ document.getElementById("objToggle").onclick = function(){
 };
 
 /* ---------- go ---------- */
+readHash();
+buildLegend();   // rebuild with restored catOff state
+updateCounts();
 resize();
 runSim();
 </script>

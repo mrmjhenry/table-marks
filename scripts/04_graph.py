@@ -137,6 +137,7 @@ def main():
             "authors": list(r["authors"])[:6],
             "objects": objs,
             "text": r["display_text"],
+            "tex": r.get("render_tex", "") or "",
         })
     edges = [
         {"s": a, "t": b, "w": round(w, 3),

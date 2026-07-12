@@ -266,13 +266,26 @@ no fonts, no fetches — so it works offline and under strict CSPs.
 - **Encodings:** color = top-7 arXiv categories + "other" (fixed-order
   colorblind-validated palette, separate light/dark variants selected via
   `prefers-color-scheme`); node radius = √interestingness.
+- **LaTeX rendering:** statements render as real math via a **vendored KaTeX**
+  (JS + CSS with woff2 fonts inlined as data URIs from `vendor/katex/`, injected
+  by `05_render.py` — still zero external requests). The panel renders the
+  gently-cleaned `render_tex` (from `body_tex`, math delimiters and environments
+  intact) with `throwOnError: false`; author-defined macros the renderer doesn't
+  know degrade to visible red TeX source, and rows with no TeX fall back to
+  plain text.
 - **Interactions:** pan/zoom; hover tooltip; click opens a detail panel with the
-  statement (raw TeX shown as text), scores, authors, arXiv link, clickable
-  object chips that filter the map, and the most related conjectures with the
-  shared objects that link them; search over titles + objects; category legend
-  toggles; open-only toggle; min-interestingness slider; a bipartite "show
-  objects" mode that adds object nodes (squares, sized by frequency) and re-runs
-  the layout.
+  rendered statement, scores, authors, arXiv link, clickable entity chips
+  (typed, see § 4b) that filter the map, and the most related conjectures with
+  the shared entities that link them; search over titles + entities; category
+  legend toggles; open-only toggle; min-interestingness slider; a bipartite
+  "show objects" mode with type-shaped entity nodes.
+- **Path finding:** with a node selected, shift-click a second node to run
+  Dijkstra over inverted edge weights (strong edges are cheap) and highlight the
+  shortest-strongest chain connecting them; the panel lists each hop with the
+  entities shared across it.
+- **Shareable URLs:** the selected node and every filter (categories, search,
+  open-only, min-interest, entity filter, objects mode) are encoded in
+  `location.hash` and restored on load — any view can be sent as a link.
 
 ## 7. Limitations & threats to validity
 

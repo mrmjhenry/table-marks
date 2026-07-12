@@ -8,7 +8,7 @@ below is implemented yet.
 
 | phase | items | rationale |
 |---|---|---|
-| **P1 — map quality** | 1 LaTeX · B8 shareable URLs · B7 path finding | pure frontend, $0, immediate payoff |
+| **P1 — map quality** ✅ shipped | 1 LaTeX · B8 shareable URLs · B7 path finding | pure frontend, $0, immediate payoff |
 | **P2 — aboutness** | 3a MSC · 3b clusters · B6 ontology browser · B9 bridge-objects report | cheap batches + reuses embedding infra |
 | **P3 — coverage** | B1 withheld recovery · B2 semantic dedup · B3 external problem lists | grow the corpus *before* the expensive knowledge passes so they run once |
 | **P4 — knowledge** | 2 proof status (web search) · B4 logical relations · B5 Lean/mathlib status | costliest; benefits from full corpus |
