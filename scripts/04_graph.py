@@ -26,6 +26,11 @@ UBIQUITY_CUTOFF = 0.15  # objects in >15% of conjectures excluded from projectio
 TOP_K_EDGES = 6         # keep union of each node's top-k edges
 DROP_QUANTILE = 0.25    # then drop the bottom quartile by weight
 
+# Sharing a structure is strong evidence of working with the same objects;
+# sharing a property ("isomorphism") is weak. Typed in 03b_type.py.
+TYPE_WEIGHTS = {"structure": 1.0, "statement": 1.5, "invariant": 0.8,
+                "property": 0.4, "discarded": 0.0}
+
 
 def main():
     df = pd.read_parquet(CONJECTURES).set_index("content_hash")
@@ -42,29 +47,39 @@ def main():
     obj_df = Counter(o for objs in objects_of.values() for o in objs)
     ubiquitous = {o for o, c in obj_df.items() if c > UBIQUITY_CUTOFF * n}
     idf = {o: math.log(n / c) for o, c in obj_df.items()}
+    type_of = {o: vocab.get(o, {}).get("type", "structure") for o in obj_df}
+    discarded = {o for o, t in type_of.items() if t == "discarded"}
     print(f"{n} conjectures, {len(obj_df)} objects in use, "
-          f"{len(ubiquitous)} excluded as ubiquitous: {sorted(ubiquitous)}")
+          f"{len(ubiquitous)} excluded as ubiquitous: {sorted(ubiquitous)}; "
+          f"{len(discarded)} typed 'discarded' excluded")
 
     # invert: object -> conjectures
     conj_of = defaultdict(list)
     for chash, objs in objects_of.items():
         for o in objs:
-            if o not in ubiquitous:
+            if o not in ubiquitous and o not in discarded:
                 conj_of[o].append(chash)
 
     # project
     weights = Counter()
     shared = defaultdict(list)
+    weight_by_type = Counter()
     for o, members in conj_of.items():
         if len(members) < 2 or len(members) > 200:
             continue
-        w = idf[o] ** 2
+        w = idf[o] ** 2 * TYPE_WEIGHTS[type_of[o]]
+        if w <= 0:
+            continue
+        weight_by_type[type_of[o]] += w * len(members) * (len(members) - 1) / 2
         for i in range(len(members)):
             for j in range(i + 1, len(members)):
                 key = tuple(sorted((members[i], members[j])))
                 weights[key] += w
                 shared[key].append(o)
     print(f"raw projection: {len(weights)} edges")
+    tot_w = sum(weight_by_type.values()) or 1
+    print("edge weight composition by entity type: " +
+          ", ".join(f"{t}: {100 * w / tot_w:.0f}%" for t, w in weight_by_type.most_common()))
 
     # prune: union of each node's top-k edges
     by_node = defaultdict(list)
@@ -130,6 +145,7 @@ def main():
     ]
     obj_table = [
         {"name": o, "df": obj_df[o], "area": vocab.get(o, {}).get("area", "other"),
+         "type": type_of[o], "individual": bool(vocab.get(o, {}).get("individual")),
          "ubiquitous": o in ubiquitous}
         for o in sorted(obj_df, key=lambda o: -obj_df[o])
     ]

@@ -186,6 +186,43 @@ is a genuinely distinct pair that was correctly *not* merged. Top objects by
 document frequency: graph (196), prime (63), polynomial (57), vertex (53),
 partition (42), generating function (41), chromatic number (40).
 
+## 4b. What we mean by "entity" — a typed vocabulary
+
+Philosophically, a [mathematical object](https://en.wikipedia.org/wiki/Mathematical_object)
+is any abstract concept arising in mathematics — numbers, sets, and functions are
+the paradigm cases. Our vocabulary is deliberately **narrower** than that (we
+exclude the paradigm cases as non-discriminative: nearly every conjecture
+involves a number) and **broader** in another direction: following common
+practice, we admit unsaturated concepts — properties, relations, and invariants —
+alongside saturated objects, but we *type* them rather than flattening
+everything into one bag. The typing follows Frege's saturated/unsaturated
+distinction:
+
+| type | definition | examples |
+|---|---|---|
+| `structure` | saturated kind of mathematical thing — you can exhibit an instance | poset, elliptic curve, Cayley graph, matroid |
+| `invariant` | quantity/function *of* a structure (implicit argument slot) | chromatic number, genus, Mordell–Weil rank |
+| `property` | predicate or relation holding *of* structures | log concavity, isomorphism, density |
+| `statement` | named theorem/conjecture/hypothesis referred to as a thing | Riemann hypothesis, Einstein vacuum equations |
+| `discarded` | proof techniques & meta-mathematical words — excluded downstream | polynomial method, counterexample, upper bound |
+
+Structures may additionally carry `individual: true` when they name one specific
+instance ("Monster group", "Riemann zeta function") rather than a kind.
+
+`scripts/03b_type.py` assigns types to every canonical vocabulary entry
+(claude-sonnet-5, chunks of 100 with example conjecture titles as context,
+schema-enforced, checkpointed into `vocab.json`). Type distribution and top
+entries per type are reported in `data/review_types.txt`.
+
+**Typing results (actual run):** all 1,977 entries typed in 20 calls (~$0.40):
+**1,418 structures, 359 invariants, 98 properties, 72 statements, 30
+discarded**; 206 entries flagged as individuals. Spot checks: chromatic
+number/girth/eigenvalue → invariant; Tate/Riemann/Hodge conjectures →
+individual statements; algorithm/solution/forcing → discarded. With type
+weighting applied, total edge weight decomposes as **structure 83%, invariant
+14%, property 2%, statement 1%** — properties no longer masquerade as strong
+mathematical kinship.
+
 ## 5. Graph construction
 
 `scripts/04_graph.py` builds a bipartite conjecture↔object incidence and projects
@@ -197,6 +234,11 @@ it to a weighted conjecture–conjecture graph:
   object (a specific moduli space) count far more than several shared common ones
   ("graph", "prime"). This is what keeps the map from collapsing into a hairball
   around ubiquitous objects.
+- **Type weighting.** Each shared entity's idf² contribution is multiplied by a
+  type factor: structure ×1.0, statement ×1.5 (two conjectures both invoking the
+  Riemann hypothesis is a very strong link), invariant ×0.8, property ×0.4
+  (half of mathematics is "isomorphic" to something), discarded ×0 (excluded).
+  The script prints the edge-weight composition by type for tuning.
 - **Ubiquity cutoff.** Objects appearing in > 15% of conjectures are excluded
   from the projection entirely (they remain as filterable tags on nodes).
 - **Pruning.** Keep the union of each node's top-6 edges by weight, then drop the
@@ -205,11 +247,12 @@ it to a weighted conjecture–conjecture graph:
 Each edge records **which** objects it shares, so relatedness is always
 explainable in the UI, never a bare similarity score.
 
-**Graph results (actual run):** no object exceeded the 15% ubiquity cutoff (the
-most common, "graph", sits at 10%), so the IDF² weighting alone tames the common
-objects. Raw projection: 47,415 edges → **5,701 after pruning**. The final graph
-has 1,936 nodes: a giant component of 1,691 (**87%**), 170 isolated nodes (9%,
-mostly conjectures whose objects appear nowhere else), and max degree 21.
+**Graph results (actual run, with type weighting):** no object exceeded the 15%
+ubiquity cutoff (the most common, "graph", sits at 10%), so the IDF² weighting
+alone tames the common objects; the 30 `discarded` entities are excluded. Raw
+projection: 47,097 edges → **5,604 after pruning**. The final graph has 1,936
+nodes: a giant component of 1,629 (**84%**), 197 isolated nodes (10%), and max
+degree 19.
 
 ## 6. Visualization
 

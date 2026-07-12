@@ -88,6 +88,7 @@
     border: 1px solid var(--border); color: var(--ink-2); background: transparent; }
   .chip:hover { border-color: var(--s1); color: var(--s1); }
   .chip.active { background: var(--s1); border-color: var(--s1); color: #fff; }
+  .chip .tg { opacity: 0.6; margin-right: 4px; font-size: 9px; }
   #panel .stmt { font-size: 12.5px; white-space: pre-wrap; border-left: 3px solid var(--baseline);
     padding: 4px 0 4px 12px; margin: 12px 0; color: var(--ink-1); }
   #panel a { color: var(--s1); }
@@ -130,6 +131,11 @@
 
 <script>
 const GRAPH = __GRAPH_DATA__;
+
+/* entity types (see README): structure ■, invariant ◆, property ≈, statement ★ */
+const objMeta = {}; (GRAPH.objects || []).forEach(o => objMeta[o.name] = o);
+const TYPE_GLYPH = {structure: "■", invariant: "◆", property: "≈", statement: "★", discarded: "·"};
+const typeOf = name => (objMeta[name] || {}).type || "structure";
 
 /* ---------- category slots: top 7 + other ---------- */
 const catCount = {};
@@ -292,7 +298,19 @@ function draw(){
     if (n.isObj){
       const s = Math.min(11, 3.4 + 1.4*Math.sqrt(n.df));
       ctx.fillStyle = css("--ink-2");
-      ctx.fillRect(p.x-s/2, p.y-s/2, s, s);
+      const t = typeOf(n.name);
+      if (t === "invariant"){            // diamond
+        ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(Math.PI/4);
+        ctx.fillRect(-s/2, -s/2, s, s); ctx.restore();
+      } else if (t === "property"){      // circle
+        ctx.beginPath(); ctx.arc(p.x, p.y, s/1.9, 0, 7); ctx.fill();
+      } else if (t === "statement"){     // triangle
+        ctx.beginPath(); ctx.moveTo(p.x, p.y-s/1.6);
+        ctx.lineTo(p.x-s/1.7, p.y+s/2.2); ctx.lineTo(p.x+s/1.7, p.y+s/2.2);
+        ctx.closePath(); ctx.fill();
+      } else {                            // structure: square
+        ctx.fillRect(p.x-s/2, p.y-s/2, s, s);
+      }
     } else {
       ctx.beginPath(); ctx.arc(p.x, p.y, n.r*Math.min(view.k,1.6), 0, 7);
       ctx.fillStyle = COLORS[catOf(n)];
@@ -343,7 +361,7 @@ addEventListener("pointermove", e => {
     tt.style.left = Math.min(e.clientX+14, innerWidth-330)+"px";
     tt.style.top = (e.clientY+14)+"px";
     tt.innerHTML = n.isObj
-      ? `<div class="t">${esc(n.name)}</div><div class="m">object · in ${n.df} conjectures</div>`
+      ? `<div class="t">${esc(n.name)}</div><div class="m">${typeOf(n.name)} · in ${n.df} conjectures</div>`
       : `<div class="t">${esc(n.title)}</div><div class="m">${esc(n.cat||"uncategorized")} · interest ${n.interest.toFixed(2)} · ${n.objects.slice(0,4).map(esc).join(", ")}</div>`;
   } else tt.style.display = "none";
 });
@@ -388,9 +406,9 @@ function openPanel(n){
       <div class="tile"><div class="v">${n.interest.toFixed(2)}</div><div class="k">interestingness</div></div>
       <div class="tile"><div class="v">${n.viability.toFixed(2)}</div><div class="k">viability</div></div>
     </div>
-    <div class="cap">objects — click to filter the map</div>
+    <div class="cap">entities — click to filter · ■ structure ◆ invariant ≈ property ★ statement</div>
     <div class="chips">${n.objects.map(o =>
-      `<button class="chip${o===objectFilter?" active":""}" data-obj="${esc(o)}">${esc(o)}</button>`).join("")}</div>
+      `<button class="chip${o===objectFilter?" active":""}" data-obj="${esc(o)}" title="${typeOf(o)}"><span class="tg">${TYPE_GLYPH[typeOf(o)]}</span>${esc(o)}</button>`).join("")}</div>
     <div class="stmt">${esc(n.text)}</div>
     <a href="${esc(n.url)}" target="_blank" rel="noopener">open paper on arXiv ↗</a>
     <div class="neigh"><div class="cap">most related conjectures</div>
