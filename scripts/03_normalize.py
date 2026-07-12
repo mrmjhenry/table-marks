@@ -27,7 +27,7 @@ REVIEW = ROOT / "data" / "review_normalize.txt"
 
 MODEL = "claude-sonnet-5"
 ANCHOR_MIN_DF = 3
-TAIL_CHUNK = 150
+TAIL_CHUNK = 100
 
 AREAS = [
     "combinatorics", "graph theory", "number theory", "algebraic geometry",
@@ -66,11 +66,13 @@ def fold(name: str) -> str:
 def llm_json(client, prompt: str, schema: dict) -> dict:
     resp = client.messages.create(
         model=MODEL,
-        max_tokens=8000,
+        max_tokens=16000,
         thinking={"type": "disabled"},
         output_config={"format": {"type": "json_schema", "schema": schema}},
         messages=[{"role": "user", "content": prompt}],
     )
+    if resp.stop_reason == "max_tokens":
+        raise RuntimeError("response truncated at max_tokens — reduce chunk size")
     text = next(b.text for b in resp.content if b.type == "text")
     return json.loads(text)
 
@@ -141,6 +143,10 @@ AREA_SCHEMA = {
 def main():
     client = anthropic.Anthropic()
 
+    # incremental: reuse decisions from a previous run
+    old_vocab = json.loads(VOCAB.read_text()) if VOCAB.exists() else {}
+    known_alias = {a: c for c, d in old_vocab.items() for a in d.get("aliases", [])}
+
     # ---- Pass A: mechanical folding ----
     per_conj = {}  # content_hash -> list of folded terms
     df_counter = Counter()
@@ -167,17 +173,20 @@ def main():
     print(f"anchors (df>={ANCHOR_MIN_DF}): {len(anchors)}, tail: {len(tail)}")
 
     # ---- Pass B1: merge duplicate anchors ----
-    alias_of = {}  # folded term -> canonical
+    alias_of = dict(known_alias)  # folded term -> canonical (seeded from prior run)
+    new_anchor_set = {a for a in anchors if a not in old_vocab and a not in known_alias}
+    marked = [(("* " + a) if a in new_anchor_set else a) for a in anchors]
     merge_result = llm_json(
         client,
-        "These are mathematical object names extracted from conjectures. "
+        "These are mathematical object names extracted from conjectures; names marked with * are NEW. "
         "Identify groups that name the SAME mathematical object (synonyms, notation variants, "
         "abbreviations — e.g. 'poset' and 'partially ordered set'). Do NOT merge distinct objects "
         "that are merely related (e.g. 'graph' and 'directed graph' stay separate). "
-        "Return only groups needing a merge, choosing the most standard name as 'keep'.\n\n"
-        + "\n".join(anchors),
+        "Return ONLY groups that include at least one NEW (*) name, choosing the most standard "
+        "name as 'keep' (without the * marker).\n\n"
+        + "\n".join(marked),
         MERGE_SCHEMA,
-    )
+    ) if new_anchor_set else {"merges": []}
     for m in merge_result["merges"]:
         keep = fold(m["keep"])
         if keep not in df_counter:
@@ -189,11 +198,14 @@ def main():
     canonical_anchors = sorted({alias_of.get(a, a) for a in anchors})
     print(f"Pass B1: merged {len(alias_of)} anchor aliases → {len(canonical_anchors)} canonical anchors")
 
-    # ---- Pass B2: map tail terms onto anchors ----
+    # ---- Pass B2: map tail terms onto anchors (new terms only) ----
     anchor_list = "\n".join(canonical_anchors)
+    known = set(old_vocab) | set(known_alias) | set(alias_of)
+    new_tail = [t for t in tail if t not in known]
+    print(f"tail terms: {len(tail)} total, {len(new_tail)} new (rest reuse prior decisions)")
     n_map = n_new = n_discard = 0
-    for i in range(0, len(tail), TAIL_CHUNK):
-        chunk = tail[i : i + TAIL_CHUNK]
+    for i in range(0, len(new_tail), TAIL_CHUNK):
+        chunk = new_tail[i : i + TAIL_CHUNK]
         result = llm_json(
             client,
             "Canonical vocabulary of mathematical objects:\n" + anchor_list
@@ -234,10 +246,12 @@ def main():
     canonicals = sorted(canonicals)
     print(f"Pass B2: {len(canonicals)} canonical objects total")
 
-    # ---- Pass B3: assign areas + parent objects ----
-    area_of, parent_of = {}, {}
-    for i in range(0, len(canonicals), TAIL_CHUNK):
-        chunk = canonicals[i : i + TAIL_CHUNK]
+    # ---- Pass B3: assign areas + parent objects (new canonicals only) ----
+    area_of = {c: old_vocab[c]["area"] for c in canonicals if c in old_vocab}
+    parent_of = {c: old_vocab[c].get("parent") for c in canonicals if c in old_vocab}
+    new_canon = [c for c in canonicals if c not in old_vocab]
+    for i in range(0, len(new_canon), TAIL_CHUNK):
+        chunk = new_canon[i : i + TAIL_CHUNK]
         result = llm_json(
             client,
             "For each mathematical object below, assign the mathematical area it most belongs to "
@@ -268,6 +282,9 @@ def main():
             final_df.update(resolved)
             f.write(json.dumps({"content_hash": chash, "objects": resolved}) + "\n")
 
+    # preserve fields added by later stages (03b typing) across rebuilds
+    old_vocab = json.loads(VOCAB.read_text()) if VOCAB.exists() else {}
+
     aliases = defaultdict(list)
     for t, target in alias_of.items():
         if target:
@@ -279,6 +296,9 @@ def main():
             "parent": parent_of.get(c),
             "df": final_df.get(c, 0),
         }
+        for k in ("type", "individual"):
+            if c in old_vocab and k in old_vocab[c]:
+                vocab[c][k] = old_vocab[c][k]
     VOCAB.write_text(json.dumps(vocab, indent=1))
 
     # ---- review flags ----

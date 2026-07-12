@@ -9,10 +9,15 @@ below is implemented yet.
 | phase | items | rationale |
 |---|---|---|
 | **P1 — map quality** ✅ shipped | 1 LaTeX · B8 shareable URLs · B7 path finding | pure frontend, $0, immediate payoff |
-| **P2 — aboutness** | 3a MSC · 3b clusters · B6 ontology browser · B9 bridge-objects report | cheap batches + reuses embedding infra |
-| **P3 — coverage** | B1 withheld recovery · B2 semantic dedup · B3 external problem lists | grow the corpus *before* the expensive knowledge passes so they run once |
-| **P4 — knowledge** | 2 proof status (web search) · B4 logical relations · B5 Lean/mathlib status | costliest; benefits from full corpus |
+| **P2 — aboutness** ✅ shipped | 3a MSC · 3b clusters · B6 ontology browser · B9 bridge-objects report | cheap batches + reuses embedding infra |
+| **P3 — coverage** ◐ B1 shipped | B1 withheld recovery ✅ · B2 semantic dedup (candidates generated, collapse not applied) · B3 external problem lists | grow the corpus *before* the expensive knowledge passes so they run once |
+| **P4 — knowledge** ◐ B4+B5 shipped | 2 proof status (web search) · B4 logical relations ✅ · B5 Lean/mathlib status ✅ (honest near-null: mathlib doesn't contain research conjectures) | costliest; benefits from full corpus |
 | **P5 — automation** | B10 living map (auto-refresh) | automate only once the pipeline shape is stable |
+
+**Remaining backlog:** item 2 (proof/resolution status via web search — the
+largest outstanding cost, ~$25–50), B2 (apply semantic-dedup collapse; the
+candidate pairs already exist in `data/dup_candidates.jsonl`), B3 (external
+problem lists), B10 (living map).
 
 ---
 

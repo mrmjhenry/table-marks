@@ -57,13 +57,21 @@ Source: config `conjectures` of `davisrbr/openconjecture` (single `train` split,
 `latest_interestingness_score`, `latest_viability_score`, `text_withheld`,
 `abs_url`.
 
-**Filtering decisions** (`scripts/01_fetch.py`):
+**Withheld-text recovery** (`scripts/00_recover.py`, optional stage): 2,181 rows
+(53%) have `text_withheld = true` — their text is not republishable because the
+source paper is under arXiv's non-exclusive-distribution license. The dataset
+records exact provenance (`source_url`, `source_file`, `start_line`–`end_line`),
+so this stage downloads each e-print (rate-limited to 1 request per 3 s, cached
+to `data/eprints/`), reads the recorded line span, and merges the text back in
+with a `text_source: recovered` flag. **Recovered text is used for local
+analysis only and is never republished**: `04_graph.py` redacts it from the
+publishable `conjecture_map.html` (metadata, extracted entities, and arXiv links
+remain; the statement itself says to follow the link), while a gitignored
+`conjecture_map_local.html` carries the full text for personal use. Recovery
+succeeded for **2,061 of 2,181 rows (94.5%)**; the 120 failures are mostly
+PDF-only submissions with no LaTeX source.
 
-- **Public text only.** 2,181 rows (53%) have `text_withheld = true` — their text
-  is not republishable because the source paper is under arXiv's
-  non-exclusive-distribution license. We keep the 1,966 rows with text (their
-  papers are CC-licensed). This is a *selection bias*: CC-licensing practices vary
-  by community, so fields are not represented proportionally (see § Limitations).
+**Filtering decisions** (`scripts/01_fetch.py`):
 - **All labels kept.** We extract objects for every with-text row and carry
   `latest_label` as a node attribute, so the map can filter to open conjectures
   (1,596 of them) without discarding the rest.
@@ -78,15 +86,15 @@ Source: config `conjectures` of `davisrbr/openconjecture` (single `train` split,
   recording all `arxiv_id`s. This collapsed **28 restatements**, leaving
   **1,936 distinct conjectures**.
 
-Pipeline row counts from the actual run:
+Pipeline row counts from the actual run (after withheld-text recovery):
 
 | stage | rows |
 |---|---|
 | dataset total | 4,147 |
-| with public text | 1,966 |
-| non-empty after cleaning | 1,964 |
-| after dedup | **1,936** |
-| labeled `real_open_conjecture` | 1,596 |
+| with text (1,966 public + 2,061 recovered) | 4,027 |
+| non-empty after cleaning | 4,016 |
+| after dedup | **3,952** |
+| labeled `real_open_conjecture` | 3,191 |
 
 ## 3. Object extraction (LLM)
 
@@ -214,13 +222,13 @@ instance ("Monster group", "Riemann zeta function") rather than a kind.
 schema-enforced, checkpointed into `vocab.json`). Type distribution and top
 entries per type are reported in `data/review_types.txt`.
 
-**Typing results (actual run):** all 1,977 entries typed in 20 calls (~$0.40):
-**1,418 structures, 359 invariants, 98 properties, 72 statements, 30
-discarded**; 206 entries flagged as individuals. Spot checks: chromatic
+**Typing results (actual run, full corpus):** all 3,795 vocabulary entries
+typed: **2,664 structures, 667 invariants, 194 properties, 195 statements, 75
+discarded**; 417 entries flagged as individuals. Spot checks: chromatic
 number/girth/eigenvalue → invariant; Tate/Riemann/Hodge conjectures →
 individual statements; algorithm/solution/forcing → discarded. With type
-weighting applied, total edge weight decomposes as **structure 83%, invariant
-14%, property 2%, statement 1%** — properties no longer masquerade as strong
+weighting applied, total edge weight decomposes as **structure 81%, invariant
+16%, property 2%, statement 2%** — properties no longer masquerade as strong
 mathematical kinship.
 
 ## 5. Graph construction
@@ -247,12 +255,59 @@ it to a weighted conjecture–conjecture graph:
 Each edge records **which** objects it shares, so relatedness is always
 explainable in the UI, never a bare similarity score.
 
-**Graph results (actual run, with type weighting):** no object exceeded the 15%
-ubiquity cutoff (the most common, "graph", sits at 10%), so the IDF² weighting
-alone tames the common objects; the 30 `discarded` entities are excluded. Raw
-projection: 47,097 edges → **5,604 after pruning**. The final graph has 1,936
-nodes: a giant component of 1,629 (**84%**), 197 isolated nodes (10%), and max
-degree 19.
+**Graph results (actual run, full corpus, with type weighting):** no object
+exceeded the 15% ubiquity cutoff, so the IDF² weighting alone tames the common
+objects; the 75 `discarded` entities are excluded. Raw projection: 123,821
+edges → **12,119 after pruning**. The final graph has 3,952 nodes: a giant
+component of 3,476 (**88%**), 332 isolated nodes (8%), and max degree 25.
+
+## 5b. Further annotation stages (merged into the map when present)
+
+**MSC 2020 codes** (`scripts/07_msc.py`). Each conjecture gets 1–2 five-char
+MSC 2020 codes (batch job; context = title + statement + the paper's abstract
+from the dataset's `papers` config). Codes are validated against the vendored
+official taxonomy (`vendor/msc2020.json`, 6,603 codes from
+[msc2020.org](https://msc2020.org), CC BY-NC-SA); invalid leaves fall back to
+their 3-char class. **Run results: all 3,952 coded, 100% valid, all
+five-character primaries.** Top classes match the corpus: 05 combinatorics
+(1,050), 11 number theory (703), 14 algebraic geometry (394). The map can color
+by MSC top-level class — this also classifies the ~719 nodes with no arXiv
+category.
+
+**Embedding clusters** (`scripts/08_clusters.py`). Title + statement embedded
+locally (`all-MiniLM-L6-v2`), clustered with HDBSCAN (leaf selection,
+min cluster size 5), each cluster named by Claude from its most central
+members. **Run results: 208 named clusters covering 1,745 conjectures (44%)**
+— the rest are honestly unclustered noise. Examples: "Ramanujan-type pi
+series", "hypergraph matching Erdős conjecture", "geometric Langlands
+correspondence". The same embeddings yield 379 near-duplicate candidate pairs
+(cosine ≥ 0.93) fed to the relations stage.
+
+**Logical relations** (`scripts/09_relations.py`). Candidate pairs = top 6,000
+graph edges by weight + the near-duplicate pairs. Each pair is classified
+strictly (generalizes / implies / equivalent / same_conjecture / none, with a
+justification; "related/analogous" is explicitly `none`). **Run results: 6,076
+pairs classified → 701 relations (387 generalizes, 183 same-conjecture, 102
+implies, 29 equivalent); 88% none**, which is the intended strictness. Relations
+render as violet directional arrows and a per-node panel section with the
+justifications.
+
+**Lean/mathlib formalization** (`scripts/10_lean.py`). Every conjecture queried
+against [LeanSearch](https://leansearch.net) (rate-limited, cached); hits
+prefiltered by embedding similarity to the statement; plausible hits verified
+by Claude against a strict standard ("formalizes the statement" vs "related
+material"). **Run results — an honest near-null: 3 of 3,952 conjectures have
+even a related mathlib hit, and none are statement-formalized.** Research-
+frontier conjectures are essentially absent from mathlib. Caveat: LeanSearch
+indexes mathlib only — formalizations in standalone Lean repositories (e.g. the
+Aharoni–Korman counterexample) are invisible to this check.
+
+**Bridge entities** (`scripts/11_bridges.py` → `reports/bridge_objects.md`).
+For each *structure* appearing in ≥ 8 MSC-classified conjectures, the Shannon
+entropy of the top-level MSC classes it touches. High df × high entropy = a
+field bridge. Top bridges of this corpus: probability distribution, polynomial,
+matrix, sphere, field, measure, representation, lattice — the universal
+structures of mathematics, empirically.
 
 ## 6. Visualization
 
@@ -283,6 +338,15 @@ no fonts, no fetches — so it works offline and under strict CSPs.
   Dijkstra over inverted edge weights (strong edges are cheap) and highlight the
   shortest-strongest chain connecting them; the panel lists each hop with the
   entities shared across it.
+- **Color modes:** color by arXiv category, MSC top-level class, or topic
+  cluster (top 7 keys + other in each mode; legend doubles as filter).
+- **Ontology browser:** a collapsible tree of the structure vocabulary
+  (area → parent structure → structure, with conjecture counts) that drives the
+  same entity filter as clicking a chip.
+- **Relations & badges:** violet arrows show typed logical relations
+  (generalizes/implies/equivalent/restates) with justifications in the panel;
+  nodes with mathlib-related material carry a Lean badge linking to the
+  declaration's documentation.
 - **Shareable URLs:** the selected node and every filter (categories, search,
   open-only, min-interest, entity filter, objects mode) are encoded in
   `location.hash` and restored on load — any view can be sent as a link.
@@ -311,12 +375,20 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 export ANTHROPIC_API_KEY=sk-ant-...   # or `ant auth login`
 
+python scripts/00_recover.py                   # optional: recover withheld text (~1 h, arXiv rate-limited)
 python scripts/01_fetch.py                     # ~1 min, downloads the dataset
 python scripts/02_extract.py --sync --limit 20 # review extraction quality first
 python scripts/02_extract.py                   # full batch; resumable, polls until done
-python scripts/03_normalize.py                 # ~30 LLM calls
-python scripts/04_graph.py                     # local only
-python scripts/05_render.py                    # → conjecture_map.html
+python scripts/03_normalize.py                 # incremental LLM canonicalization
+python scripts/03b_type.py                     # type the vocabulary
+python scripts/07_msc.py                       # MSC 2020 codes (batch)
+python scripts/08_clusters.py                  # local embeddings + clusters + near-dup pairs
+python scripts/04_graph.py                     # build graph (needed before 09)
+python scripts/09_relations.py                 # logical relations (batch)
+python scripts/10_lean.py                      # LeanSearch + verification (rate-limited)
+python scripts/04_graph.py                     # rebuild with all annotations merged
+python scripts/11_bridges.py                   # bridge-entities report
+python scripts/05_render.py                    # → conjecture_map.html (+ _local variant)
 open conjecture_map.html
 ```
 
@@ -324,7 +396,9 @@ Every stage caches to `data/` and skips completed work: extraction is keyed by
 content hash in `extractions.jsonl` (crash-safe append), so interrupting and
 rerunning never re-pays for finished calls.
 
-**Actual cost & runtime of this run:** extraction $2.16 (three batches,
-~50 minutes wall-clock, dominated by batch queue time); normalization ~40
-synchronous calls (~$1, ~4 minutes); everything else is local and takes seconds.
-**Total ≈ $3–3.50.**
+**Actual cost & runtime:** v1 (public text only) ≈ $3.50. The full-corpus
+expansion (withheld recovery + extraction delta + MSC + clusters + relations +
+Lean verification) added ≈ $20 in API usage ($15.90 of it in half-price
+batches, with prompt caching absorbing ~3M input tokens) and ~4 hours of
+wall-clock, dominated by arXiv/LeanSearch rate limits and batch queue time.
+**Project total ≈ $23.**

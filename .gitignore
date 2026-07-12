@@ -4,3 +4,4 @@ __pycache__/
 .DS_Store
 key.log
 .claude/
+conjecture_map_local.html

@@ -20,7 +20,18 @@ ROOT = Path(__file__).resolve().parent.parent
 CONJECTURES = ROOT / "data" / "conjectures.parquet"
 NORMALIZED = ROOT / "data" / "normalized.jsonl"
 VOCAB = ROOT / "data" / "vocab.json"
-OUT = ROOT / "data" / "graph.json"
+OUT = ROOT / "data" / "graph.json"          # publish-safe (recovered text redacted)
+OUT_LOCAL = ROOT / "data" / "graph_local.json"  # full text, local use only
+
+# optional annotation stages — merged into nodes when present
+MSC_ASSIGN = ROOT / "data" / "msc.jsonl"
+CLUSTERS = ROOT / "data" / "clusters.jsonl"
+RELATIONS = ROOT / "data" / "relations.jsonl"
+LEAN = ROOT / "data" / "lean.jsonl"
+
+WITHHELD_NOTE = ("[Statement text recovered from the arXiv source for local analysis; "
+                 "omitted from the published map for licensing reasons — "
+                 "follow the arXiv link to read it.]")
 
 UBIQUITY_CUTOFF = 0.15  # objects in >15% of conjectures excluded from projection
 TOP_K_EDGES = 6         # keep union of each node's top-k edges
@@ -122,11 +133,29 @@ def main():
           f"({100 * (components[0] if components else 0) / n:.0f}%), "
           f"isolated: {isolated} ({100 * isolated / n:.0f}%), max degree: {max_deg}")
 
+    # optional annotations
+    def load_jsonl(path):
+        if not path.exists():
+            return {}
+        return {r["content_hash"]: r for r in
+                (json.loads(l) for l in path.read_text().splitlines() if l.strip())}
+    msc = load_jsonl(MSC_ASSIGN)
+    clusters = load_jsonl(CLUSTERS)
+    lean = load_jsonl(LEAN)
+    relations = []
+    if RELATIONS.exists():
+        relations = [r for r in (json.loads(l) for l in RELATIONS.read_text().splitlines() if l.strip())
+                     if r.get("relation") not in (None, "none")
+                     and r["a"] in objects_of and r["b"] in objects_of]
+    print(f"annotations: msc={len(msc)}, clusters={len(clusters)}, "
+          f"lean={sum(1 for v in lean.values() if v.get('status') != 'none')}, "
+          f"relations={len(relations)}")
+
     # node payloads
     nodes = []
     for chash, objs in objects_of.items():
         r = df.loc[chash]
-        nodes.append({
+        node = {
             "id": chash,
             "title": r["title"],
             "cat": r["primary_category"] or "",
@@ -138,12 +167,25 @@ def main():
             "objects": objs,
             "text": r["display_text"],
             "tex": r.get("render_tex", "") or "",
-        })
+            "src": r.get("text_source", "dataset"),
+        }
+        if chash in msc and msc[chash]["codes"]:
+            node["msc"] = msc[chash]["codes"]
+            node["mscNames"] = msc[chash]["names"]
+        if chash in clusters and clusters[chash]["cluster_id"] >= 0:
+            node["cluster"] = clusters[chash]["cluster_name"]
+        if chash in lean and lean[chash].get("status") != "none":
+            node["lean"] = {"status": lean[chash]["status"], "decl": lean[chash]["decl"],
+                            "module": lean[chash]["module"]}
+        nodes.append(node)
     edges = [
         {"s": a, "t": b, "w": round(w, 3),
          "shared": sorted(shared[(a, b)], key=lambda o: -idf[o])[:6]}
         for (a, b), w in kept.items()
     ]
+    rel_edges = [{"a": r["a"], "b": r["b"], "rel": r["relation"],
+                  "subject": r.get("subject"), "why": r.get("justification", "")[:300]}
+                 for r in relations]
     obj_table = [
         {"name": o, "df": obj_df[o], "area": vocab.get(o, {}).get("area", "other"),
          "type": type_of[o], "individual": bool(vocab.get(o, {}).get("individual")),
@@ -151,10 +193,28 @@ def main():
         for o in sorted(obj_df, key=lambda o: -obj_df[o])
     ]
 
-    graph = {"nodes": nodes, "edges": edges, "objects": obj_table}
+    # vocab tree for the ontology browser (structures with a parent or children)
+    vocab_tree = {o: {"parent": d.get("parent"), "area": d.get("area", "other")}
+                  for o, d in vocab.items()
+                  if d.get("type") == "structure" and d.get("df", 0) > 0}
+
+    graph_local = {"nodes": nodes, "edges": edges, "objects": obj_table,
+                   "relations": rel_edges, "vocabTree": vocab_tree}
+    OUT_LOCAL.write_text(json.dumps(graph_local))
+
+    # publish-safe variant: redact recovered statement text (metadata stays)
+    safe_nodes = []
+    n_redacted = 0
+    for node in nodes:
+        if node["src"] == "recovered":
+            node = {**node, "text": WITHHELD_NOTE, "tex": ""}
+            n_redacted += 1
+        safe_nodes.append(node)
+    graph = {**graph_local, "nodes": safe_nodes}
     OUT.write_text(json.dumps(graph))
-    print(f"wrote {OUT} ({OUT.stat().st_size / 1e6:.1f} MB): "
-          f"{len(nodes)} nodes, {len(edges)} edges, {len(obj_table)} objects")
+    print(f"wrote {OUT} ({OUT.stat().st_size / 1e6:.1f} MB, {n_redacted} statements redacted) "
+          f"and {OUT_LOCAL.name}: {len(nodes)} nodes, {len(edges)} edges, "
+          f"{len(rel_edges)} relation edges, {len(obj_table)} objects")
 
     top = sorted(((sum(idf[o] ** 2 for _ in conj_of[o]) * 0, obj_df[o], o) for o in conj_of), reverse=True)[:20]
     print("\ntop objects by df (in projection):")

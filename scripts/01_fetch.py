@@ -5,6 +5,7 @@ Output: data/conjectures.parquet — one row per distinct conjecture (content_ha
 with model_text (for LLM extraction) and display_text (for the visualization).
 """
 import hashlib
+import json
 import re
 from pathlib import Path
 
@@ -13,6 +14,7 @@ from datasets import load_dataset
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "data" / "conjectures.parquet"
+RECOVERED = ROOT / "data" / "recovered.jsonl"  # optional, from 00_recover.py
 
 MODEL_TEXT_MAX_CHARS = 6000
 DISPLAY_TEXT_MAX_CHARS = 4000
@@ -54,6 +56,19 @@ def main():
     ds = load_dataset("davisrbr/openconjecture", "conjectures", split="train")
     df = ds.to_pandas()
     n0 = len(df)
+
+    # merge recovered withheld text (local research use only — see 00_recover.py)
+    df["text_source"] = "dataset"
+    n_rec = 0
+    if RECOVERED.exists():
+        rec = {json.loads(l)["id"]: json.loads(l)["body_tex"]
+               for l in RECOVERED.read_text().splitlines() if l.strip()}
+        mask = df["id"].isin(rec) & df["text_withheld"]
+        df.loc[mask, "body_tex"] = df.loc[mask, "id"].map(rec)
+        df.loc[mask, "plain_text"] = ""
+        df.loc[mask, "text_withheld"] = False
+        df.loc[mask, "text_source"] = "recovered"
+        n_rec = int(mask.sum())
 
     df = df[~df["text_withheld"]].copy()
     n1 = len(df)
@@ -99,14 +114,15 @@ def main():
         "thash", "arxiv_id", "all_arxiv_ids", "title", "authors", "primary_category",
         "categories", "published_at", "abs_url", "latest_label",
         "latest_interestingness_score", "latest_viability_score",
-        "model_text", "display_text", "render_tex",
+        "model_text", "display_text", "render_tex", "text_source",
     ]].rename(columns={"thash": "content_hash"})
 
     OUT.parent.mkdir(exist_ok=True)
     keep.to_parquet(OUT, index=False)
 
     print(f"total rows:            {n0}")
-    print(f"with public text:      {n1}")
+    print(f"recovered text merged: {n_rec}")
+    print(f"with text:             {n1}")
     print(f"non-empty text:        {n2}")
     print(f"after dedupe:          {n3}  (collapsed {dupes} restatements)")
     print(f"open conjectures:      {(keep['latest_label'] == 'real_open_conjecture').sum()}")

@@ -63,6 +63,32 @@
   #legend .row .n { color: var(--ink-muted); margin-left: auto; padding-left: 10px;
     font-variant-numeric: tabular-nums; }
   #legend .cap { font-size: 11px; color: var(--ink-muted); margin-bottom: 5px; }
+  select { font: inherit; font-size: 12px; color: var(--ink-1); background: transparent;
+    border: none; outline: none; }
+  select option { background: var(--surface-1); }
+
+  #tree { position: absolute; left: 14px; top: 56px; bottom: 220px; width: 280px; z-index: 5;
+    background: var(--panel-bg); border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px 6px 10px 12px; overflow-y: auto; display: none;
+    box-shadow: 0 1px 6px rgba(0,0,0,0.08); }
+  #tree.open { display: block; }
+  #tree .area > .lbl { font-weight: 650; font-size: 12px; padding: 4px 4px; cursor: pointer; }
+  #tree .kids { display: none; margin-left: 10px; border-left: 1px solid var(--grid); padding-left: 8px; }
+  #tree .area.exp > .kids { display: block; }
+  #tree .ent { display: flex; gap: 6px; padding: 2px 4px; font-size: 12px; cursor: pointer;
+    border-radius: 4px; align-items: baseline; }
+  #tree .ent:hover { background: var(--grid); }
+  #tree .ent.active { color: var(--s1); font-weight: 600; }
+  #tree .ent .n { color: var(--ink-muted); margin-left: auto; font-size: 11px;
+    font-variant-numeric: tabular-nums; }
+  #tree .sub { margin-left: 14px; }
+  #panel .rel-row { padding: 6px 8px; border-left: 3px solid var(--s5); margin: 6px 0;
+    border-radius: 0 6px 6px 0; cursor: pointer; }
+  #panel .rel-row:hover { background: var(--grid); }
+  #panel .rel-kind { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.5px;
+    color: var(--s5); font-weight: 650; }
+  #panel .lean-badge { display: inline-block; font-size: 11px; padding: 2px 8px;
+    border: 1px solid var(--s2); color: var(--s2); border-radius: 10px; margin: 6px 0; }
 
   #tooltip { position: absolute; z-index: 8; pointer-events: none; display: none;
     max-width: 320px; background: var(--panel-bg); border: 1px solid var(--border);
@@ -121,11 +147,19 @@
   <div class="ctl"><input id="search" type="search" placeholder="Search titles &amp; objects…"></div>
   <div class="ctl"><label><input type="checkbox" id="openOnly"> open only</label></div>
   <div class="ctl"><label>min interest</label><input type="range" id="minInterest" min="0" max="0.9" step="0.05" value="0"><span id="minInterestV" style="font-variant-numeric:tabular-nums;color:var(--ink-2)">0.00</span></div>
+  <div class="ctl"><label>color</label><select id="colorMode">
+    <option value="cat">arXiv category</option>
+    <option value="msc">MSC class</option>
+    <option value="cluster">topic cluster</option>
+  </select></div>
   <button class="mini" id="objToggle" title="Show mathematical objects as square nodes">show objects</button>
+  <button class="mini" id="treeToggle" title="Browse the entity ontology">browse entities</button>
   <button class="mini" id="clearBtn">reset</button>
 </div>
 
-<div id="legend"><div class="cap">arXiv category — click to filter</div></div>
+<div id="legend"><div class="cap" id="legendCap">arXiv category — click to filter</div></div>
+<div id="tree"><div class="cap" style="font-size:11px;color:var(--ink-muted);margin-bottom:6px">
+  entity ontology (structures) — click to filter</div><div id="treeBody"></div></div>
 <div id="tooltip"></div>
 <div id="hint">drag to pan · scroll to zoom · click a node · shift-click a second node for a path</div>
 
@@ -143,22 +177,43 @@ const objMeta = {}; (GRAPH.objects || []).forEach(o => objMeta[o.name] = o);
 const TYPE_GLYPH = {structure: "■", invariant: "◆", property: "≈", statement: "★", discarded: "·"};
 const typeOf = name => (objMeta[name] || {}).type || "structure";
 
-/* ---------- category slots: top 7 + other ---------- */
-const catCount = {};
-GRAPH.nodes.forEach(n => { const c = n.cat || "uncategorized"; catCount[c] = (catCount[c]||0)+1; });
-const topCats = Object.entries(catCount).sort((a,b)=>b[1]-a[1]).slice(0,7).map(e=>e[0]);
-const catSlot = {}; topCats.forEach((c,i)=>catSlot[c]=i+1);
-const catOf = n => { const c = n.cat || "uncategorized"; return catSlot[c] ? c : "other"; };
-const otherCount = GRAPH.nodes.filter(n=>catOf(n)==="other").length;
+/* ---------- color modes: top 7 keys + other, fixed slot order ---------- */
+const MSC_TOP = {"00":"general","03":"logic","05":"combinatorics","11":"number theory",
+  "13":"commutative algebra","14":"algebraic geometry","15":"linear algebra","16":"associative rings",
+  "17":"nonassoc. rings","18":"category theory","19":"K-theory","20":"group theory","22":"Lie groups",
+  "26":"real functions","28":"measure theory","30":"complex functions","32":"several complex vars",
+  "33":"special functions","34":"ODE","35":"PDE","37":"dynamical systems","39":"difference eqs",
+  "40":"sequences/series","41":"approximation","42":"harmonic analysis","43":"abstract harmonic",
+  "46":"functional analysis","47":"operator theory","49":"calculus of variations","51":"geometry",
+  "52":"convex/discrete geom","53":"differential geometry","54":"general topology","55":"algebraic topology",
+  "57":"manifolds","58":"global analysis","60":"probability","62":"statistics","65":"numerical",
+  "68":"computer science","81":"quantum theory","82":"statistical mechanics","83":"relativity",
+  "90":"operations research","91":"game theory/econ","94":"information theory"};
+const MODES = {
+  cat:     {cap: "arXiv category — click to filter", key: n => n.cat || "uncategorized"},
+  msc:     {cap: "MSC top-level class — click to filter",
+            key: n => n.msc ? n.msc[0].slice(0,2) + " " + (MSC_TOP[n.msc[0].slice(0,2)] || "") : "unclassified"},
+  cluster: {cap: "topic cluster — click to filter", key: n => n.cluster || "no cluster"},
+};
+let colorMode = "cat";
+let topKeys = [], keySlot = {}, keyCount = {};
+const keyOf = n => { const k = MODES[colorMode].key(n); return keySlot[k] ? k : "other"; };
 
 const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 let COLORS = {};
 function refreshColors(){
   COLORS = {};
-  topCats.forEach((c,i)=>COLORS[c]=css("--s"+(i+1)));
+  topKeys.forEach((k,i)=>COLORS[k]=css("--s"+(i+1)));
   COLORS["other"] = css("--ink-muted");
 }
-refreshColors();
+function computeKeys(){
+  keyCount = {};
+  GRAPH.nodes.forEach(n => { const k = MODES[colorMode].key(n); keyCount[k]=(keyCount[k]||0)+1; });
+  topKeys = Object.entries(keyCount).sort((a,b)=>b[1]-a[1]).slice(0,7).map(e=>e[0]);
+  keySlot = {}; topKeys.forEach((k,i)=>keySlot[k]=i+1);
+  refreshColors();
+}
+computeKeys();
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", ()=>{ refreshColors(); buildLegend(); draw(); });
 
 /* ---------- state ---------- */
@@ -169,6 +224,14 @@ const neighbors = {}; // id -> [{id, shared, w}]
 edges.forEach(e => {
   (neighbors[e.s] = neighbors[e.s]||[]).push({id: e.t, shared: e.shared, w: e.w});
   (neighbors[e.t] = neighbors[e.t]||[]).push({id: e.s, shared: e.shared, w: e.w});
+});
+
+/* logical relations (B4): typed directed edges, drawn distinctly */
+const relations = (GRAPH.relations || []).filter(r => byId[r.a] && byId[r.b]);
+const relOf = {};
+relations.forEach(r => {
+  (relOf[r.a] = relOf[r.a]||[]).push(r);
+  (relOf[r.b] = relOf[r.b]||[]).push(r);
 });
 
 const catOff = new Set();
@@ -192,6 +255,7 @@ function writeHash(){
   if (minInterest) p.set("mi", String(minInterest));
   if (objectFilter) p.set("obj", objectFilter);
   if (showObjects) p.set("so", "1");
+  if (colorMode !== "cat") p.set("cm", colorMode);
   const h = p.toString();
   history.replaceState(null, "", h ? "#" + h : location.pathname + location.search);
 }
@@ -209,13 +273,15 @@ function readHash(){
   document.getElementById("minInterestV").textContent = minInterest.toFixed(2);
   objectFilter = p.get("obj") || null;
   wantObjects = p.get("so") === "1";
+  if (MODES[p.get("cm")]){ colorMode = p.get("cm");
+    document.getElementById("colorMode").value = colorMode; computeKeys(); }
   const sel = p.get("sel");
   if (sel && byId[sel]) selected = byId[sel];
   restoring = false;
 }
 
 function visible(n){
-  if (catOff.has(catOf(n))) return false;
+  if (catOff.has(keyOf(n))) return false;
   if (openOnly && n.label !== "real_open_conjecture") return false;
   if (n.interest < minInterest) return false;
   if (objectFilter && !n.objects.includes(objectFilter)) return false;
@@ -344,6 +410,30 @@ function draw(){
     ctx.beginPath(); ctx.moveTo(pa.x,pa.y); ctx.lineTo(pb.x,pb.y); ctx.stroke();
   });
 
+  /* relation arrows (drawn above similarity edges, below nodes) */
+  if (!showObjects) relations.forEach(r => {
+    const a = byId[r.a], b = byId[r.b];
+    if (!visible(a) || !visible(b)) return;
+    if (path && !(path.nodeSet.has(r.a) && path.nodeSet.has(r.b))) return;
+    if (!path && hi && !(hi.has(r.a) && hi.has(r.b))) return;
+    const src = r.subject === "b" ? b : a, dst = r.subject === "b" ? a : b;
+    const ps = worldToScreen(src), pd = worldToScreen(dst);
+    ctx.strokeStyle = css("--s5"); ctx.fillStyle = css("--s5"); ctx.lineWidth = 1.6;
+    if (r.rel === "equivalent" || r.rel === "same_conjecture") ctx.setLineDash([5,3]);
+    ctx.beginPath(); ctx.moveTo(ps.x, ps.y); ctx.lineTo(pd.x, pd.y); ctx.stroke();
+    ctx.setLineDash([]);
+    if (r.subject){  // arrowhead near the destination node
+      const dx = pd.x-ps.x, dy = pd.y-ps.y, L = Math.hypot(dx,dy)||1;
+      const ux = dx/L, uy = dy/L;
+      const tipX = pd.x - ux*(dst.r*Math.min(view.k,1.6)+4), tipY = pd.y - uy*(dst.r*Math.min(view.k,1.6)+4);
+      ctx.beginPath();
+      ctx.moveTo(tipX, tipY);
+      ctx.lineTo(tipX - ux*7 - uy*3.5, tipY - uy*7 + ux*3.5);
+      ctx.lineTo(tipX - ux*7 + uy*3.5, tipY - uy*7 - ux*3.5);
+      ctx.closePath(); ctx.fill();
+    }
+  });
+
   simNodes.forEach(n => {
     if (!n.isObj && !visible(n)) return;
     const dim = path ? !path.nodeSet.has(n.id) : (hi && !hi.has(n.id));
@@ -368,7 +458,7 @@ function draw(){
       }
     } else {
       ctx.beginPath(); ctx.arc(p.x, p.y, n.r*Math.min(view.k,1.6), 0, 7);
-      ctx.fillStyle = COLORS[catOf(n)];
+      ctx.fillStyle = COLORS[keyOf(n)];
       ctx.fill();
       ctx.lineWidth = 1; ctx.strokeStyle = css("--surface-1"); ctx.stroke();
     }
@@ -517,12 +607,36 @@ function openPathPanel(a, b, ids){
 
 /* ---------- panel ---------- */
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const REL_PHRASE = {generalizes: ["generalizes", "is generalized by"],
+                    implies: ["implies", "is implied by"],
+                    equivalent: ["is equivalent to", "is equivalent to"],
+                    same_conjecture: ["restates", "is restated by"]};
+
 function openPanel(n){
   const nb = (neighbors[n.id]||[]).slice().sort((a,b)=>b.w-a.w).slice(0,8);
+  const rels = relOf[n.id] || [];
+  const mscLine = n.msc ? `<div class="meta">MSC: ${n.msc.map((c,i) =>
+    `<b>${esc(c)}</b> ${esc((n.mscNames||[])[i]||"")}`).join(" · ")}</div>` : "";
+  const clusterLine = n.cluster ? `<div class="meta">topic cluster: ${esc(n.cluster)}</div>` : "";
+  const leanBadge = n.lean ? `<div><a class="lean-badge" target="_blank" rel="noopener"
+    href="https://leanprover-community.github.io/mathlib4_docs/${esc(n.lean.module.replaceAll(".","/"))}.html">
+    ✓ mathlib ${n.lean.status === "statement_found" ? "formalizes this statement" : "related"}: ${esc(n.lean.decl)}</a></div>` : "";
+  const srcTag = n.src === "recovered" ? " · text recovered from arXiv source" : "";
+  const relSection = rels.length ? `<div class="neigh"><div class="cap">logical relations</div>` +
+    rels.map(r => {
+      const other = byId[r.a === n.id ? r.b : r.a];
+      const iAmSubject = (r.subject === "a" && r.a === n.id) || (r.subject === "b" && r.b === n.id);
+      const phrase = REL_PHRASE[r.rel][iAmSubject || !r.subject ? 0 : 1];
+      return `<div class="rel-row" data-id="${esc(other.id)}">
+        <div class="rel-kind">${esc(phrase)}</div>
+        <div class="nt">${esc(other.title)}</div>
+        <div class="ns">${esc(r.why)}</div></div>`;
+    }).join("") + `</div>` : "";
   document.getElementById("panelBody").innerHTML = `
-    <div class="meta">${esc(n.cat||"uncategorized")} · ${esc(n.label.replaceAll("_"," "))}</div>
+    <div class="meta">${esc(n.cat||"uncategorized")} · ${esc(n.label.replaceAll("_"," "))}${srcTag}</div>
     <h2>${esc(n.title)}</h2>
     <div class="meta">${n.authors.map(esc).join(", ")}</div>
+    ${mscLine}${clusterLine}${leanBadge}
     <div class="scores">
       <div class="tile"><div class="v">${n.interest.toFixed(2)}</div><div class="k">interestingness</div></div>
       <div class="tile"><div class="v">${n.viability.toFixed(2)}</div><div class="k">viability</div></div>
@@ -532,6 +646,7 @@ function openPanel(n){
       `<button class="chip${o===objectFilter?" active":""}" data-obj="${esc(o)}" title="${typeOf(o)}"><span class="tg">${TYPE_GLYPH[typeOf(o)]}</span>${esc(o)}</button>`).join("")}</div>
     <div class="stmt">${esc(n.tex || n.text)}</div>
     <a href="${esc(n.url)}" target="_blank" rel="noopener">open paper on arXiv ↗</a>
+    ${relSection}
     <div class="neigh"><div class="cap">most related conjectures</div>
       ${nb.map(m => { const t = byId[m.id]; return `
         <div class="nrow" data-id="${esc(m.id)}">
@@ -560,9 +675,44 @@ function openPanel(n){
   }
   document.querySelectorAll("#panel .chip").forEach(el =>
     el.onclick = () => setObjectFilter(el.dataset.obj === objectFilter ? null : el.dataset.obj));
-  document.querySelectorAll("#panel .nrow").forEach(el =>
-    el.onclick = () => { const t = byId[el.dataset.id]; if (t){ selected = t; centerOn(t); openPanel(t); draw(); } });
+  document.querySelectorAll("#panel .nrow, #panel .rel-row").forEach(el =>
+    el.onclick = () => { const t = byId[el.dataset.id]; if (t){ selected = t; centerOn(t); openPanel(t); writeHash(); draw(); } });
 }
+
+/* ---------- ontology browser (B6): area -> structure tree ---------- */
+function buildTree(){
+  const vt = GRAPH.vocabTree || {};
+  const kidsOf = {};
+  Object.entries(vt).forEach(([name, d]) => {
+    if (d.parent && vt[d.parent]) (kidsOf[d.parent] = kidsOf[d.parent]||[]).push(name);
+  });
+  const isChild = new Set(Object.values(kidsOf).flat());
+  const byArea = {};
+  Object.entries(vt).forEach(([name, d]) => {
+    if (!isChild.has(name)) (byArea[d.area] = byArea[d.area]||[]).push(name);
+  });
+  const dfOf = name => (objMeta[name] || {}).df || 0;
+  const entRow = (name, sub) => `<div class="ent${sub ? " sub" : ""}${name === objectFilter ? " active" : ""}"
+      data-obj="${esc(name)}"><span>${esc(name)}</span><span class="n">${dfOf(name)}</span></div>`;
+  const areas = Object.entries(byArea)
+    .map(([a, names]) => [a, names, names.reduce((s, n) => s + dfOf(n), 0)])
+    .sort((x, y) => y[2] - x[2]);
+  document.getElementById("treeBody").innerHTML = areas.map(([a, names, total]) => `
+    <div class="area"><div class="lbl">${esc(a)} <span style="color:var(--ink-muted);font-weight:400">${total}</span></div>
+    <div class="kids">${names.sort((x, y) => dfOf(y) - dfOf(x)).map(name =>
+      entRow(name, false) + (kidsOf[name] || []).sort((x, y) => dfOf(y) - dfOf(x)).map(k => entRow(k, true)).join("")
+    ).join("")}</div></div>`).join("");
+  document.querySelectorAll("#tree .area > .lbl").forEach(el =>
+    el.onclick = () => el.parentElement.classList.toggle("exp"));
+  document.querySelectorAll("#tree .ent").forEach(el =>
+    el.onclick = () => setObjectFilter(el.dataset.obj === objectFilter ? null : el.dataset.obj));
+}
+document.getElementById("treeToggle").onclick = function(){
+  const t = document.getElementById("tree");
+  t.classList.toggle("open");
+  this.classList.toggle("on", t.classList.contains("open"));
+  if (t.classList.contains("open")) buildTree();
+};
 function closePanel(){ document.getElementById("panel").classList.remove("open"); }
 document.getElementById("panelClose").onclick = () => { selected = null; closePanel(); draw(); };
 function centerOn(n){ view.x = W()/2/view.k - n.x; view.y = H()/2/view.k - n.y; }
@@ -571,7 +721,9 @@ function centerOn(n){ view.x = W()/2/view.k - n.x; view.y = H()/2/view.k - n.y; 
 function buildLegend(){
   const lg = document.getElementById("legend");
   lg.querySelectorAll(".row").forEach(r=>r.remove());
-  const rows = topCats.map(c => [c, catCount[c]]).concat([["other", otherCount]]);
+  document.getElementById("legendCap").textContent = MODES[colorMode].cap;
+  const otherCount = GRAPH.nodes.filter(n => keyOf(n) === "other").length;
+  const rows = topKeys.map(k => [k, keyCount[k]]).concat([["other", otherCount]]);
   rows.forEach(([c, count]) => {
     const div = document.createElement("div");
     div.className = "row" + (catOff.has(c) ? " off" : "");
@@ -597,6 +749,10 @@ document.getElementById("minInterest").addEventListener("input", e => {
   minInterest = +e.target.value;
   document.getElementById("minInterestV").textContent = minInterest.toFixed(2);
   updateCounts(); writeHash(); draw(); });
+document.getElementById("colorMode").addEventListener("change", e => {
+  colorMode = e.target.value;
+  catOff.clear();
+  computeKeys(); buildLegend(); updateCounts(); writeHash(); draw(); });
 document.getElementById("clearBtn").onclick = () => {
   searchQ = ""; document.getElementById("search").value = "";
   openOnly = false; document.getElementById("openOnly").checked = false;
@@ -612,6 +768,8 @@ function setObjectFilter(name){
   objectFilter = name;
   updateCounts();
   if (selected) openPanel(selected);
+  document.querySelectorAll("#tree .ent").forEach(el =>
+    el.classList.toggle("active", el.dataset.obj === objectFilter));
   writeHash();
   draw();
 }
