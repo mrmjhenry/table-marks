@@ -3,5 +3,6 @@ data/
 __pycache__/
 .DS_Store
 key.log
-.claude/
+.claude/*
+!.claude/skills/
 conjecture_map_local.html
