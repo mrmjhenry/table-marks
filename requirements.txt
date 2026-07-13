@@ -2,3 +2,8 @@ anthropic
 datasets
 pandas
 pyarrow
+
+# proof workspace server (app/)
+fastapi
+uvicorn
+claude-agent-sdk
