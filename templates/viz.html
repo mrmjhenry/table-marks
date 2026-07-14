@@ -89,6 +89,8 @@
     color: var(--s5); font-weight: 650; }
   #panel .lean-badge { display: inline-block; font-size: 11px; padding: 2px 8px;
     border: 1px solid var(--s2); color: var(--s2); border-radius: 10px; margin: 6px 0; }
+  #panel .panel-links { display: flex; gap: 10px; align-items: center; }
+  #panel .prove-btn { color: var(--s1); border-color: var(--s1); }
 
   #tooltip { position: absolute; z-index: 8; pointer-events: none; display: none;
     max-width: 320px; background: var(--panel-bg); border: 1px solid var(--border);
@@ -171,6 +173,21 @@
 <script>__KATEX_JS__</script>
 <script>
 const GRAPH = __GRAPH_DATA__;
+
+/* ---------- proof-workspace integration (optional local server) ----------
+   When the proof-workspace server (app/server.py) is running, node panels
+   gain a "prove this" button. Opened as a plain file with no server, the
+   probe fails silently and the button stays hidden. */
+let PROVE_SERVER = null;
+fetch("http://127.0.0.1:8765/api/health", {mode: "cors"})
+  .then(r => (r.ok ? r.json() : null))
+  .then(j => {
+    if (!j || !j.ok) return;
+    PROVE_SERVER = "http://127.0.0.1:8765";
+    const b = document.querySelector("#panel .prove-btn");
+    if (b) b.hidden = false;
+  })
+  .catch(() => {});
 
 /* entity types (see README): structure ■, invariant ◆, property ≈, statement ★ */
 const objMeta = {}; (GRAPH.objects || []).forEach(o => objMeta[o.name] = o);
@@ -645,7 +662,11 @@ function openPanel(n){
     <div class="chips">${n.objects.map(o =>
       `<button class="chip${o===objectFilter?" active":""}" data-obj="${esc(o)}" title="${typeOf(o)}"><span class="tg">${TYPE_GLYPH[typeOf(o)]}</span>${esc(o)}</button>`).join("")}</div>
     <div class="stmt">${esc(n.tex || n.text)}</div>
-    <a href="${esc(n.url)}" target="_blank" rel="noopener">open paper on arXiv ↗</a>
+    <div class="panel-links">
+      <a href="${esc(n.url)}" target="_blank" rel="noopener">open paper on arXiv ↗</a>
+      <button class="mini prove-btn" data-id="${esc(n.id)}" ${PROVE_SERVER ? "" : "hidden"}
+        title="open this conjecture in the proof workspace">prove this ↗</button>
+    </div>
     ${relSection}
     <div class="neigh"><div class="cap">most related conjectures</div>
       ${nb.map(m => { const t = byId[m.id]; return `
@@ -677,6 +698,9 @@ function openPanel(n){
     el.onclick = () => setObjectFilter(el.dataset.obj === objectFilter ? null : el.dataset.obj));
   document.querySelectorAll("#panel .nrow, #panel .rel-row").forEach(el =>
     el.onclick = () => { const t = byId[el.dataset.id]; if (t){ selected = t; centerOn(t); openPanel(t); writeHash(); draw(); } });
+  const pb = document.querySelector("#panel .prove-btn");
+  if (pb) pb.onclick = () =>
+    window.open(PROVE_SERVER + "/workspace?node=" + pb.dataset.id, "_blank");
 }
 
 /* ---------- ontology browser (B6): area -> structure tree ---------- */
