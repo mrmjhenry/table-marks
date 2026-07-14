@@ -71,6 +71,9 @@
   .step .num { font-weight: 650; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
   .step .kind { font-size: 10.5px; color: var(--s5); text-transform: uppercase; letter-spacing: 0.4px; }
   .step .who { font-size: 11px; color: var(--ink-muted); margin-left: auto; }
+  .step .sact { font-size: 10.5px; padding: 1px 7px; opacity: 0; transition: opacity 0.12s; }
+  .step:hover .sact { opacity: 1; }
+  body.busy .sact { opacity: 0 !important; pointer-events: none; }
   .step .stmt { margin: 6px 0 2px; overflow-x: auto; }
   .step .just { color: var(--ink-2); font-size: 12px; }
   .step details { margin-top: 6px; }
@@ -344,6 +347,7 @@ function connectEvents(sid){
 
 function setBusy(b){
   busy = b;
+  document.body.classList.toggle("busy", b);
   $("busy").classList.toggle("on", b);
   $("submitBtn").disabled = b;
   document.querySelectorAll("#ftr .act").forEach(el => el.disabled = b);
@@ -388,14 +392,32 @@ function renderSteps(){
         ${st.kind !== "step" ? `<span class="kind">${esc(st.kind)}</span>` : ""}
         <span class="badge ${esc(st.status)}">${esc(st.status.replace(/_/g," "))}</span>
         <span class="who">${st.author === "human" ? "you" : "agent"}</span>
+        <button class="mini sact" data-act="check_step" data-step="${esc(st.id)}"
+          title="ask the agent to (re)check this step">check</button>
+        <button class="mini sact" data-act="prove_subgoal" data-step="${esc(st.id)}"
+          title="hand this subgoal to the agent to close">delegate</button>
       </div>
       <div class="stmt"></div>
-      ${st.justification ? `<div class="just">— ${esc(st.justification)}</div>` : ""}
-      ${st.discovery_rationale ? `<div class="just" title="discovery rationale">✦ ${esc(st.discovery_rationale)}</div>` : ""}
+      ${st.justification ? `<div class="just jr-j">— </div>` : ""}
+      ${st.discovery_rationale ? `<div class="just jr-r" title="discovery rationale">✦ </div>` : ""}
       ${st.agent_comment ? `<details ${st.status === "verified" ? "" : "open"}>
         <summary>agent commentary</summary><div class="comment"></div></details>` : ""}`;
     tex(div.querySelector(".stmt"), st.statement_tex);
     if (st.agent_comment) tex(div.querySelector(".comment"), st.agent_comment);
+    if (st.justification){
+      const el = div.querySelector(".jr-j"), span = document.createElement("span");
+      tex(span, st.justification); el.appendChild(span);
+    }
+    if (st.discovery_rationale){
+      const el = div.querySelector(".jr-r"), span = document.createElement("span");
+      tex(span, st.discovery_rationale); el.appendChild(span);
+    }
+    div.querySelectorAll(".sact").forEach(btn => btn.onclick = async () => {
+      if (busy) return;
+      try { await api(`/sessions/${S.id}/actions`,
+                      {body: {type: btn.dataset.act, step_id: btn.dataset.step}}); }
+      catch (e) { appendNotice(e.message); }
+    });
     box.appendChild(div);
   }
 }

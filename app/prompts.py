@@ -195,7 +195,10 @@ def action_prompt(sess: dict, action: dict) -> str:
                 "Write and save search scripts (randomized, boundary, "
                 "small-n exhaustive), log them as evidence. Report any hit "
                 "with `report_counterexample` and the Lakatos diagnostic; "
-                "report an empty search honestly as supporting evidence only.")
+                "if the hit definitively refutes the statement (machine-"
+                "verified, no wiggle room), also call `set_status(refuted)` "
+                "with the best revised conjecture in the note. Report an "
+                "empty search honestly as supporting evidence only.")
     if kind == "chat":
         return action.get("text", "")
     raise ValueError(f"unknown action type {kind!r}")
