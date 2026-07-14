@@ -1,0 +1,61 @@
+{
+  "id": "sqrt2",
+  "theorem": {
+    "title": "√2 is irrational",
+    "tex": "$\\sqrt{2} \\notin \\mathbb{Q}$",
+    "text": "The square root of 2 cannot be written as a ratio of two integers."
+  },
+  "intro": "Welcome! This walkthrough teaches the workspace on the classic proof that $\\sqrt2$ is irrational. You'll submit each step yourself — type it, or press **use this step** to fill the input — and the agent will genuinely check every step (nothing here is canned). One step ahead is deliberately incomplete, so you can watch the agent catch a gap.",
+  "steps": [
+    {
+      "coach": "We argue by contradiction. Submit the opening assumption — press **use this step**, then **submit step**.",
+      "suggested": {
+        "statement": "Suppose toward a contradiction that $\\sqrt{2} = p/q$ where $p, q \\in \\mathbb{Z}$, $q \\neq 0$, and $\\gcd(p,q) = 1$.",
+        "justification": "proof by contradiction; every rational number can be written in lowest terms"
+      },
+      "expect": ["verified", "partially_verified"]
+    },
+    {
+      "coach": "Now turn the equation into integer arithmetic: square both sides and clear the denominator. (Any time you're unsure what comes next, try the **hint** button.)",
+      "suggested": {
+        "statement": "Then $2q^2 = p^2$.",
+        "justification": "square both sides of $\\sqrt2 = p/q$ and multiply through by $q^2$"
+      },
+      "expect": ["verified"]
+    },
+    {
+      "coach": "Next comes the key parity lemma. Submit it EXACTLY as suggested — with the justification left blank — and watch what the agent does with an unjustified claim.",
+      "suggested": {
+        "statement": "Since $p^2$ is even, $p$ is even.",
+        "justification": ""
+      },
+      "expect": ["partially_verified", "unverified"],
+      "after": "See that? The agent flagged the lemma as not fully verified: true, but asserted without proof. That's the grading discipline — claims earn *verified* only when justified. Let's close the gap by proving the lemma itself as its own step."
+    },
+    {
+      "coach": "Justify the parity lemma with the contrapositive.",
+      "suggested": {
+        "statement": "Indeed, if $p$ were odd, say $p = 2k+1$, then $p^2 = 4k^2 + 4k + 1$ would be odd, contradicting that $p^2 = 2q^2$ is even. Hence $p$ is even.",
+        "justification": "contrapositive: odd × odd = odd"
+      },
+      "expect": ["verified"]
+    },
+    {
+      "coach": "Now use the same move on $q$: substitute $p = 2k$ and see what falls out.",
+      "suggested": {
+        "statement": "Write $p = 2k$ with $k \\in \\mathbb{Z}$. Then $2q^2 = (2k)^2 = 4k^2$, so $q^2 = 2k^2$ is even, and by the parity lemma $q$ is even too.",
+        "justification": "substitute $p=2k$ into $2q^2=p^2$, divide by 2, then apply the parity lemma proved above"
+      },
+      "expect": ["verified"]
+    },
+    {
+      "coach": "Time to land the contradiction. Once this step verifies, the agent should recognize the proof is complete — watch the status pill in the header and the write-up in the evidence log.",
+      "suggested": {
+        "statement": "Both $p$ and $q$ are even, so $2 \\mid \\gcd(p,q)$, contradicting $\\gcd(p,q) = 1$. Hence no such $p/q$ exists, and $\\sqrt{2} \\notin \\mathbb{Q}$. $\\blacksquare$",
+        "justification": "contradiction with the lowest-terms assumption from the first step"
+      },
+      "expect": ["verified"]
+    }
+  ],
+  "outro": "That's the whole proof — status **proved**. Things worth noticing: every step carries a grade the agent set through its tools (never just prose); the evidence log holds the scripts it ran, which stay in the session's workspace as regression checks; and the gap at the parity lemma got repaired the Lakatos way — by making the hidden lemma an explicit step. From here, try your own conjecture from the home page, or pick one from the map and press *prove this*."
+}

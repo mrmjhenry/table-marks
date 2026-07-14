@@ -106,6 +106,18 @@
     background: var(--page); border-radius: 6px; padding: 5px 7px; margin-top: 4px;
     white-space: pre-wrap; overflow-x: auto; max-height: 90px; overflow-y: auto; }
 
+  #coach { display: none; border: 1px solid var(--s3); border-left-width: 4px;
+    border-radius: 10px; padding: 10px 13px; margin-bottom: 10px; background: var(--surface-1); }
+  #coach.on { display: block; }
+  #coach .cap { color: var(--s3); margin-bottom: 4px; }
+  #coach .after { color: var(--ink-2); font-size: 12.5px; border-bottom: 1px dashed var(--grid);
+    padding-bottom: 8px; margin-bottom: 8px; }
+  #coach .txt { font-size: 13px; }
+  #coach .row { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
+  #coach .skip { margin-left: auto; font-size: 11.5px; color: var(--ink-muted);
+    background: none; border: none; }
+  #coach .skip:hover { color: var(--ink-1); }
+
   #ftr { border-top: 1px solid var(--border); background: var(--surface-1); padding: 10px 18px; }
   #ftr textarea { width: 100%; font: inherit; color: var(--ink-1); background: var(--page);
     border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; resize: vertical;
@@ -145,7 +157,8 @@
   <div class="wrap">
     <h1>Proof Workspace</h1>
     <div class="sub">develop a proof step by step, with an agent checking your work —
-      or pick a conjecture from the <a href="/">map</a></div>
+      pick a conjecture from the <a href="/">map</a>, or take the
+      <a href="/workspace?demo=sqrt2">guided tour (√2 is irrational)</a></div>
     <div class="card">
       <div class="cap">new theorem / conjecture</div>
       <input type="text" id="newTitle" placeholder="Title (e.g. √2 is irrational)">
@@ -188,6 +201,15 @@
     </div>
   </div>
   <div id="ftr">
+    <div id="coach">
+      <div class="cap">guided walkthrough <span id="coachN"></span></div>
+      <div class="after" id="coachAfter" style="display:none"></div>
+      <div class="txt" id="coachTxt"></div>
+      <div class="row">
+        <button class="mini" id="coachUse" style="display:none">use this step</button>
+        <button class="skip" id="coachSkip">skip ›</button>
+      </div>
+    </div>
     <textarea id="stmt" placeholder="Next proof step — LaTeX welcome ($…$ around math). ⌘⏎ to submit"></textarea>
     <div class="row">
       <input type="text" id="just" placeholder="justification (optional)">
@@ -264,6 +286,8 @@ let S = null;            /* current session json (server is authoritative) */
 let ES = null;           /* EventSource */
 let live = null;         /* {turn_id, text} while agent prose streams */
 let busy = false;
+let DEMO = null;         /* guided-walkthrough script (app/demos/*.json) */
+let coachCursor = 0;     /* index into DEMO.steps */
 
 /* ---------------------------------------------------------------- home */
 async function renderHome(){
@@ -306,6 +330,12 @@ async function openSession(sid){
   S = await api("/sessions/" + sid);
   $("home").classList.remove("on"); $("app").classList.add("on");
   setBusy(!!S.busy);
+  if (S.mode === "guided" && S.demo){
+    try {
+      DEMO = await api("/demos/" + S.demo);
+      coachCursor = S.guided_cursor || 0;
+    } catch (e) { DEMO = null; }
+  }
   renderAll();
   connectEvents(sid);
 }
@@ -335,6 +365,7 @@ function connectEvents(sid){
   ES.addEventListener("turn_done", () => {
     live = null; $("ticker").textContent = "";
     setBusy(false); renderLive();
+    maybeAdvanceCoach(); renderCoach();
   });
   ES.addEventListener("error", e => {           /* server-sent error events */
     if (e.data){
@@ -363,8 +394,61 @@ function appendNotice(msg){
 
 function scrollFlow(){ const f = $("flow"); f.scrollTop = f.scrollHeight; }
 
+/* ---------------------------------------------------------- guided mode */
+/* Coach text supports $math$ plus **bold**. */
+function proseHtml(el, s){
+  el.innerHTML = esc(s).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
+  try {
+    renderMathInElement(el, {throwOnError: false, errorColor: "var(--s6)",
+                             delimiters: DELIMS});
+  } catch (e) {}
+}
+
+function maybeAdvanceCoach(){
+  if (!DEMO || busy) return;
+  const human = S.steps.filter(s => s.author === "human");
+  while (coachCursor < DEMO.steps.length && human.length > coachCursor){
+    const st = human[coachCursor];
+    const checked = st.agent_comment != null || st.status !== "unverified";
+    if (!(checked && DEMO.steps[coachCursor].expect.includes(st.status))) break;
+    coachCursor++;
+    api(`/sessions/${S.id}/guided`, {body: {cursor: coachCursor}}).catch(() => {});
+  }
+}
+
+function renderCoach(){
+  const box = $("coach");
+  if (!DEMO){ box.classList.remove("on"); return; }
+  box.classList.add("on");
+  const done = coachCursor >= DEMO.steps.length;
+  const entry = done ? null : DEMO.steps[coachCursor];
+  $("coachN").textContent = done ? "· complete 🎉"
+                                 : `· ${coachCursor + 1}/${DEMO.steps.length}`;
+  const pre = coachCursor === 0 ? DEMO.intro : DEMO.steps[coachCursor - 1].after;
+  const afterEl = $("coachAfter");
+  if (pre && !done){ afterEl.style.display = ""; proseHtml(afterEl, pre); }
+  else afterEl.style.display = "none";
+  proseHtml($("coachTxt"), done ? DEMO.outro : entry.coach);
+  $("coachUse").style.display = (done || !entry.suggested) ? "none" : "";
+  $("coachSkip").style.display = done ? "none" : "";
+}
+
+$("coachUse").onclick = () => {
+  const e = DEMO && DEMO.steps[coachCursor];
+  if (!e || !e.suggested) return;
+  $("stmt").value = e.suggested.statement;
+  $("just").value = e.suggested.justification || "";
+  $("stmt").focus();
+};
+$("coachSkip").onclick = () => {
+  coachCursor++;
+  api(`/sessions/${S.id}/guided`, {body: {cursor: coachCursor}}).catch(() => {});
+  renderCoach();
+};
+
 /* ------------------------------------------------------------ rendering */
-function renderAll(){ renderHeader(); renderSteps(); renderChat(); renderSide(); }
+function renderAll(){ maybeAdvanceCoach(); renderHeader(); renderSteps();
+                      renderChat(); renderSide(); renderCoach(); }
 
 function renderHeader(){
   $("hTitle").textContent = S.theorem.title;
@@ -403,7 +487,7 @@ function renderSteps(){
       ${st.agent_comment ? `<details ${st.status === "verified" ? "" : "open"}>
         <summary>agent commentary</summary><div class="comment"></div></details>` : ""}`;
     tex(div.querySelector(".stmt"), st.statement_tex);
-    if (st.agent_comment) tex(div.querySelector(".comment"), st.agent_comment);
+    if (st.agent_comment) proseHtml(div.querySelector(".comment"), st.agent_comment);
     if (st.justification){
       const el = div.querySelector(".jr-j"), span = document.createElement("span");
       tex(span, st.justification); el.appendChild(span);
@@ -431,7 +515,8 @@ function renderChat(){
     div.innerHTML = `<div class="who">${m.role === "user" ?
       "you" + (m.action && m.action !== "chat" ? " · " + esc(m.action.replace(/_/g," ")) : "")
       : "agent"}</div><div class="txt"></div>`;
-    tex(div.querySelector(".txt"), m.text);
+    if (m.role === "user") tex(div.querySelector(".txt"), m.text);
+    else proseHtml(div.querySelector(".txt"), m.text);
     box.appendChild(div);
   }
   scrollFlow();
@@ -538,9 +623,7 @@ async function boot(){
       return await openSession(s.id);
     }
     if (q.get("demo")){
-      /* guided demos land in plan step 6 */
-      const s = await api("/sessions", {body: {title: "demo placeholder (step 6)",
-                                               tex: "", mode: "guided", demo: q.get("demo")}});
+      const s = await api("/sessions", {body: {demo: q.get("demo")}});
       history.replaceState(null, "", "?session=" + s.id);
       return await openSession(s.id);
     }

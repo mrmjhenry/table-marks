@@ -188,11 +188,33 @@ def sessions_list():
     return store.list_sessions()
 
 
+def _load_demo(name: str) -> dict:
+    if not name or not name.replace("_", "").isalnum():
+        raise HTTPException(400, f"bad demo name {name!r}")
+    p = ROOT / "app" / "demos" / f"{name}.json"
+    if not p.is_file():
+        raise HTTPException(404, f"no demo {name!r}")
+    return json.loads(p.read_text())
+
+
+@app.get("/api/demos/{name}")
+def demo_get(name: str):
+    return _load_demo(name)
+
+
 @app.post("/api/sessions")
 async def sessions_create(request: Request):
     body = await request.json()
     mode = body.get("mode", "free")
     demo = body.get("demo")
+    if demo:
+        d = _load_demo(demo)
+        sess = store.create_session(source_kind="user",
+                                    title=d["theorem"]["title"],
+                                    tex=d["theorem"]["tex"],
+                                    text=d["theorem"].get("text"),
+                                    mode="guided", demo=demo)
+        return sess
     try:
         if body.get("node_id"):
             sess = store.create_session(source_kind="map_node",
@@ -281,6 +303,19 @@ async def action_submit(sid: str, request: Request):
     hub.emit("state_patch", {"session": sess})
     hub.submit({k: v for k, v in body.items() if k in ("type", "step_id", "text")})
     return {"queued": True, "pending": hub.queue.qsize()}
+
+
+@app.post("/api/sessions/{sid}/guided")
+async def guided_cursor(sid: str, request: Request):
+    """Persist guided-demo progress so a reload resumes the walkthrough."""
+    sess = _load_or_404(sid)
+    body = await request.json()
+    cur = body.get("cursor")
+    if not isinstance(cur, int) or cur < 0:
+        raise HTTPException(400, "cursor must be a non-negative integer")
+    sess["guided_cursor"] = cur
+    store.save_session(sess)
+    return {"cursor": cur}
 
 
 @app.post("/api/sessions/{sid}/interrupt")

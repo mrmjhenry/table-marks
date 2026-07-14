@@ -170,7 +170,12 @@ def action_prompt(sess: dict, action: dict) -> str:
                 "Check it in the context of the proof so far: is it correct, "
                 "justified, and does it advance the argument? Verify with a "
                 "script where the domain allows, log the evidence, then call "
-                "`update_step` with the grade and a precise comment.")
+                "`update_step` with the grade and a precise comment. If this "
+                "step verifiably completes the whole proof (all steps "
+                "verified, conclusion reached), run the skill's verification "
+                "passes and call `set_status` with the write-up; a step that "
+                "justifies an earlier partially_verified step may also "
+                "upgrade that step's grade.")
     if kind == "hint":
         return ("The human asks for a hint toward the next step. One nudge, "
                 "no spoilers, no state changes.")
