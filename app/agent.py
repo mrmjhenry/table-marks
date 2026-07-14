@@ -20,7 +20,11 @@ compact state recap rebuilt from session.json.
 from __future__ import annotations
 
 import asyncio
+import os
 import re
+import shlex
+import shutil
+import sys
 import time
 from pathlib import Path
 
@@ -110,9 +114,36 @@ def _check_bash(cmd: str, ws: Path) -> str | None:
     return None
 
 
+# macOS Seatbelt: the allowlist can't confine a Turing-complete `python3 -c`
+# whose write path hides inside a string arg, so we ALSO run every approved
+# Bash command under sandbox-exec with OS-enforced write confinement. Reads
+# stay open (the allowlist handles read-path discipline); writes are limited
+# to the session workspace plus the infra Python/pip genuinely need.
+_SANDBOX_EXEC = shutil.which("sandbox-exec") if sys.platform == "darwin" else None
+
+
+def _sandbox_profile(ws: Path) -> str:
+    tmpdir = os.environ.get("TMPDIR", "/private/tmp").rstrip("/")
+    writable = [str(ws.resolve()), str((ROOT / ".venv").resolve()),
+                "/private/tmp", "/private/var/folders", tmpdir,
+                str(Path.home() / "Library" / "Caches"),
+                str(Path.home() / ".cache")]
+    subpaths = "\n".join(f'(allow file-write* (subpath "{p}"))'
+                         for p in dict.fromkeys(writable))
+    return ("(version 1)\n(allow default)\n(deny file-write*)\n" + subpaths +
+            '\n(allow file-write*'
+            ' (literal "/dev/null") (literal "/dev/stdout")'
+            ' (literal "/dev/stderr") (literal "/dev/dtracehelper")'
+            ' (literal "/dev/tty"))\n')
+
+
 def make_permission_handler(sid: str):
     """can_use_tool callback confining side effects to the session workspace."""
     ws = store.workspace_dir(sid)
+    profile_path = None
+    if _SANDBOX_EXEC:
+        profile_path = ws.parent / "sandbox.sb"
+        profile_path.write_text(_sandbox_profile(ws))
 
     async def handler(tool_name: str, tool_input: dict, context):
         if tool_name in ("Write", "Edit", "MultiEdit"):
@@ -128,12 +159,19 @@ def make_permission_handler(sid: str):
                 f"You may only write inside your working directory {ws}. "
                 "Use a relative path."))
         if tool_name == "Bash":
-            reason = _check_bash(tool_input.get("command", ""), ws)
-            if reason is None:
-                with open(ws / "commands.log", "a") as f:
-                    f.write(tool_input.get("command", "") + "\n")
-                return PermissionResultAllow()
-            return PermissionResultDeny(message="Denied: " + reason)
+            cmd = tool_input.get("command", "")
+            reason = _check_bash(cmd, ws)
+            if reason is not None:
+                return PermissionResultDeny(message="Denied: " + reason)
+            with open(ws / "commands.log", "a") as f:
+                f.write(cmd + "\n")
+            if profile_path is not None:      # OS-enforce write confinement
+                wrapped = (f"{shlex.quote(_SANDBOX_EXEC)} -f "
+                           f"{shlex.quote(str(profile_path))} /bin/bash -c "
+                           f"{shlex.quote(cmd)}")
+                return PermissionResultAllow(updated_input={**tool_input,
+                                                            "command": wrapped})
+            return PermissionResultAllow()
         return PermissionResultDeny(message=(
             f"Tool {tool_name} is not available in the proof workspace."))
 
