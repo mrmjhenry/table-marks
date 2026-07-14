@@ -2,6 +2,7 @@ anthropic
 datasets
 pandas
 pyarrow
+sympy
 
 # proof workspace server (app/)
 fastapi

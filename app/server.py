@@ -17,7 +17,9 @@ plumbing can be exercised end to end.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
+import os
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import (FileResponse, JSONResponse, PlainTextResponse,
@@ -27,7 +29,21 @@ from fastapi.staticfiles import StaticFiles
 from . import store
 from .store import ROOT
 
-app = FastAPI(title="proof-workspace", docs_url=None, redoc_url=None)
+
+@contextlib.asynccontextmanager
+async def lifespan(app):
+    reaper = None
+    if hasattr(agent_runner, "reap_idle_forever"):
+        reaper = asyncio.create_task(agent_runner.reap_idle_forever())
+    yield
+    if reaper:
+        reaper.cancel()
+    if hasattr(agent_runner, "close_all"):
+        await agent_runner.close_all()
+
+
+app = FastAPI(title="proof-workspace", docs_url=None, redoc_url=None,
+              lifespan=lifespan)
 
 ACTION_TYPES = {"check_step", "hint", "suggest_next", "prove_subgoal",
                 "prove_remaining", "challenge", "chat"}
@@ -128,7 +144,11 @@ class StubAgent:
         pass
 
 
-agent_runner = StubAgent()
+if os.environ.get("PROOF_STUB_AGENT"):
+    agent_runner = StubAgent()          # UI tests without an API key / spend
+else:
+    from .agent import AgentManager
+    agent_runner = AgentManager()
 
 
 # ---------------------------------------------------------------- pages
@@ -243,13 +263,22 @@ async def action_submit(sid: str, request: Request):
         raise HTTPException(400, f"unknown action type {kind!r}")
     if kind in ("check_step", "prove_subgoal") and not store.get_step(sess, body.get("step_id", "")):
         raise HTTPException(400, f"no step {body.get('step_id')!r}")
-    if kind == "chat":
-        if not (body.get("text") or "").strip():
-            raise HTTPException(400, "chat needs text")
-        store.add_chat(sess, "user", body["text"].strip(), action="chat")
-        store.save_session(sess)
-        get_hub(sid).emit("state_patch", {"session": sess})
+    if kind == "chat" and not (body.get("text") or "").strip():
+        raise HTTPException(400, "chat needs text")
+    ACTION_PHRASE = {
+        "check_step": "re-check step {step_id}",
+        "hint": "give me a hint",
+        "suggest_next": "suggest the next step",
+        "prove_subgoal": "take over subgoal {step_id}",
+        "prove_remaining": "take over and prove the remaining",
+        "challenge": "challenge the conjecture",
+    }
+    text = (body.get("text") or "").strip() or \
+        ACTION_PHRASE[kind].format(step_id=body.get("step_id", "?"))
+    store.add_chat(sess, "user", text, action=kind)
+    store.save_session(sess)
     hub = get_hub(sid)
+    hub.emit("state_patch", {"session": sess})
     hub.submit({k: v for k, v in body.items() if k in ("type", "step_id", "text")})
     return {"queued": True, "pending": hub.queue.qsize()}
 
