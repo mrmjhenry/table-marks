@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Proof Workspace</title>
+<link rel="stylesheet" href="/vendor/katex/katex.inline.css">
+<style>
+  /* same design tokens as the conjecture map (templates/viz.html) */
+  :root {
+    --surface-1: #fcfcfb; --page: #f9f9f7;
+    --ink-1: #0b0b0b; --ink-2: #52514e; --ink-muted: #898781;
+    --grid: #e1e0d9; --baseline: #c3c2b7; --border: rgba(11,11,11,0.10);
+    --s1:#2a78d6; --s2:#1baf7a; --s3:#eda100; --s4:#008300;
+    --s5:#4a3aa7; --s6:#e34948; --s7:#e87ba4; --s8:#eb6834;
+    --panel-bg: rgba(252,252,251,0.96);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --surface-1: #1a1a19; --page: #0d0d0d;
+      --ink-1: #ffffff; --ink-2: #c3c2b7; --ink-muted: #898781;
+      --grid: #2c2c2a; --baseline: #383835; --border: rgba(255,255,255,0.10);
+      --s1:#3987e5; --s2:#199e70; --s3:#c98500; --s4:#008300;
+      --s5:#9085e9; --s6:#e66767; --s7:#d55181; --s8:#d95926;
+      --panel-bg: rgba(26,26,25,0.96);
+    }
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; }
+  body { font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+         background: var(--page); color: var(--ink-1); overflow: hidden; }
+  a { color: var(--s1); }
+  button { font: inherit; cursor: pointer; }
+  button.mini { font-size: 12px; color: var(--ink-2); background: transparent;
+    border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; }
+  button.mini:hover:not(:disabled) { color: var(--ink-1); border-color: var(--baseline); }
+  button.mini:disabled { opacity: 0.4; cursor: default; }
+  button.primary { color: #fff; background: var(--s1); border: 1px solid var(--s1);
+    border-radius: 6px; padding: 4px 12px; }
+  button.primary:disabled { opacity: 0.4; cursor: default; }
+  .cap { font-size: 11px; color: var(--ink-muted); text-transform: uppercase;
+    letter-spacing: 0.5px; margin-bottom: 6px; }
+  .badge { display: inline-block; font-size: 10.5px; font-weight: 650; padding: 1px 8px;
+    border-radius: 10px; border: 1px solid; text-transform: uppercase; letter-spacing: 0.4px; }
+  .badge.verified          { color: var(--s2); border-color: var(--s2); }
+  .badge.partially_verified{ color: var(--s3); border-color: var(--s3); }
+  .badge.unverified        { color: var(--ink-muted); border-color: var(--border); }
+  .badge.refuted           { color: var(--s6); border-color: var(--s6); }
+  .badge.in_progress       { color: var(--s1); border-color: var(--s1); }
+  .badge.proved            { color: #fff; background: var(--s2); border-color: var(--s2); }
+  .badge.partial           { color: var(--s3); border-color: var(--s3); }
+
+  /* ------- app shell: header / main (steps | evidence) / footer ------- */
+  #app { display: none; height: 100vh; grid-template-rows: auto 1fr auto; }
+  #app.on { display: grid; }
+  #hdr { padding: 12px 18px 10px; border-bottom: 1px solid var(--border);
+    background: var(--surface-1); }
+  #hdr .row1 { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  #hdr h1 { font-size: 15px; font-weight: 650; }
+  #hdr .meta { color: var(--ink-muted); font-size: 12px; }
+  #hdr .thm { font-size: 13px; margin-top: 6px; border-left: 3px solid var(--baseline);
+    padding: 3px 0 3px 12px; white-space: pre-wrap; overflow-x: auto; }
+  #main { display: grid; grid-template-columns: minmax(0,1fr) 330px; min-height: 0; }
+  #flow { overflow-y: auto; padding: 14px 18px; }
+  #side { overflow-y: auto; padding: 14px 16px; border-left: 1px solid var(--border);
+    background: var(--surface-1); }
+
+  .step { border: 1px solid var(--border); border-radius: 10px; background: var(--surface-1);
+    padding: 10px 12px; margin-bottom: 10px; }
+  .step .top { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+  .step .num { font-weight: 650; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+  .step .kind { font-size: 10.5px; color: var(--s5); text-transform: uppercase; letter-spacing: 0.4px; }
+  .step .who { font-size: 11px; color: var(--ink-muted); margin-left: auto; }
+  .step .stmt { margin: 6px 0 2px; overflow-x: auto; }
+  .step .just { color: var(--ink-2); font-size: 12px; }
+  .step details { margin-top: 6px; }
+  .step summary { font-size: 11.5px; color: var(--ink-muted); cursor: pointer; user-select: none; }
+  .step .comment { font-size: 12.5px; margin-top: 4px; border-left: 3px solid var(--grid);
+    padding-left: 10px; white-space: pre-wrap; }
+
+  #convo { margin-top: 18px; }
+  .bubble { border-radius: 10px; padding: 8px 12px; margin: 8px 0; max-width: 92%;
+    white-space: pre-wrap; overflow-x: auto; }
+  .bubble.user { background: var(--grid); margin-left: auto; }
+  .bubble.agent { background: var(--surface-1); border: 1px solid var(--border); }
+  .bubble .who { font-size: 10.5px; color: var(--ink-muted); text-transform: uppercase;
+    letter-spacing: 0.4px; margin-bottom: 3px; }
+  #live .cursor { display: inline-block; width: 7px; height: 13px; background: var(--s1);
+    vertical-align: text-bottom; animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  #ticker { font-size: 11.5px; color: var(--ink-muted); font-family: ui-monospace, monospace;
+    margin: 4px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .cx { border: 1px solid var(--s5); border-left-width: 4px; border-radius: 8px;
+    padding: 9px 11px; margin-bottom: 10px; }
+  .cx .kind { font-size: 10.5px; color: var(--s5); font-weight: 650;
+    text-transform: uppercase; letter-spacing: 0.5px; }
+  .cx .desc { margin: 5px 0; overflow-x: auto; }
+  .cx .note { font-size: 12px; color: var(--ink-2); }
+  .ev { border-bottom: 1px solid var(--grid); padding: 8px 2px; font-size: 12px; }
+  .ev .k { color: var(--ink-muted); font-size: 11px; }
+  .ev .out { font-family: ui-monospace, monospace; font-size: 11px; color: var(--ink-2);
+    background: var(--page); border-radius: 6px; padding: 5px 7px; margin-top: 4px;
+    white-space: pre-wrap; overflow-x: auto; max-height: 90px; overflow-y: auto; }
+
+  #ftr { border-top: 1px solid var(--border); background: var(--surface-1); padding: 10px 18px; }
+  #ftr textarea { width: 100%; font: inherit; color: var(--ink-1); background: var(--page);
+    border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; resize: vertical;
+    min-height: 44px; outline: none; }
+  #ftr textarea:focus, #ftr input:focus { border-color: var(--s1); }
+  #ftr .row { display: flex; gap: 8px; margin-top: 8px; align-items: center; flex-wrap: wrap; }
+  #just { flex: 1; min-width: 180px; font: inherit; color: var(--ink-1); background: var(--page);
+    border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; outline: none; }
+  #busy { font-size: 12px; color: var(--s1); margin-left: auto; display: none; }
+  #busy.on { display: flex; align-items: center; gap: 8px; }
+
+  /* --------------------------- home view --------------------------- */
+  #home { display: none; height: 100vh; overflow-y: auto; }
+  #home.on { display: block; }
+  #home .wrap { max-width: 720px; margin: 0 auto; padding: 40px 20px; }
+  #home h1 { font-size: 19px; font-weight: 650; margin-bottom: 4px; }
+  #home .sub { color: var(--ink-muted); margin-bottom: 26px; }
+  #home .card { background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 12px; padding: 16px 18px; margin-bottom: 20px; }
+  #home input[type=text], #home textarea { width: 100%; font: inherit; color: var(--ink-1);
+    background: var(--page); border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 10px; outline: none; margin-bottom: 8px; }
+  #home textarea { min-height: 70px; resize: vertical; }
+  .srow { display: flex; gap: 10px; align-items: baseline; padding: 9px 6px;
+    border-bottom: 1px solid var(--grid); cursor: pointer; border-radius: 6px; }
+  .srow:hover { background: var(--grid); }
+  .srow .t { flex: 1; }
+  .srow .m { color: var(--ink-muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+  .srow .del { border: none; background: none; color: var(--ink-muted); font-size: 14px; }
+  .srow .del:hover { color: var(--s6); }
+  #err { color: var(--s6); font-size: 12px; margin-top: 8px; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+
+<div id="home">
+  <div class="wrap">
+    <h1>Proof Workspace</h1>
+    <div class="sub">develop a proof step by step, with an agent checking your work —
+      or pick a conjecture from the <a href="/">map</a></div>
+    <div class="card">
+      <div class="cap">new theorem / conjecture</div>
+      <input type="text" id="newTitle" placeholder="Title (e.g. √2 is irrational)">
+      <textarea id="newTex" placeholder="Statement — LaTeX welcome, use $…$ around math (e.g. $\sqrt2\notin\mathbb{Q}$)"></textarea>
+      <button class="primary" id="newBtn">start proving</button>
+      <div id="err"></div>
+    </div>
+    <div class="card">
+      <div class="cap">sessions</div>
+      <div id="sessList"><div class="m" style="color:var(--ink-muted)">loading…</div></div>
+    </div>
+  </div>
+</div>
+
+<div id="app">
+  <div id="hdr">
+    <div class="row1">
+      <a href="/workspace" title="all sessions">←</a>
+      <h1 id="hTitle"></h1>
+      <span class="badge" id="hStatus"></span>
+      <span class="meta" id="hMeta"></span>
+    </div>
+    <div class="thm" id="hThm"></div>
+  </div>
+  <div id="main">
+    <div id="flow">
+      <div class="cap">proof steps</div>
+      <div id="steps"></div>
+      <div id="convo">
+        <div class="cap">conversation</div>
+        <div id="chat"></div>
+        <div id="ticker"></div>
+        <div id="live"></div>
+      </div>
+    </div>
+    <div id="side">
+      <div id="cxBox"></div>
+      <div class="cap">evidence log</div>
+      <div id="evList"></div>
+    </div>
+  </div>
+  <div id="ftr">
+    <textarea id="stmt" placeholder="Next proof step — LaTeX welcome ($…$ around math). ⌘⏎ to submit"></textarea>
+    <div class="row">
+      <input type="text" id="just" placeholder="justification (optional)">
+      <button class="primary" id="submitBtn">submit step</button>
+      <button class="mini act" data-act="hint">hint</button>
+      <button class="mini act" data-act="suggest_next">suggest next</button>
+      <button class="mini act" data-act="prove_remaining">prove remaining</button>
+      <button class="mini act" data-act="challenge">challenge</button>
+      <button class="mini act" data-act="chat">ask</button>
+      <span id="busy">agent working… <button class="mini" id="intBtn">interrupt</button></span>
+    </div>
+  </div>
+</div>
+
+<script src="/vendor/katex/katex.bundle.js"></script>
+<script>
+"use strict";
+
+/* ------------------------------------------------------------- helpers */
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g,
+  c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+const DELIMS = [                       /* same list as the map */
+  {left: "$$", right: "$$", display: true},
+  {left: "\\[", right: "\\]", display: true},
+  {left: "\\begin{equation}", right: "\\end{equation}", display: true},
+  {left: "\\begin{equation*}", right: "\\end{equation*}", display: true},
+  {left: "\\begin{align}", right: "\\end{align}", display: true},
+  {left: "\\begin{align*}", right: "\\end{align*}", display: true},
+  {left: "$", right: "$", display: false},
+  {left: "\\(", right: "\\)", display: false},
+];
+
+/* English-sentence detector: keeps prose (agent commentary, chat) from being
+   force-rendered as one big formula just because it contains _ or =. */
+function looksProse(s){
+  if (/[.!?]\s/.test(s)) return true;
+  const bareWords = s.split(/\s+/).filter(w => /^[A-Za-z,;:()'"”“-]{2,}$/.test(w));
+  return bareWords.length > 6;
+}
+
+/* Render a string that may hold $-delimited math, or be one bare formula. */
+function tex(el, s){
+  s = String(s ?? "");
+  el.textContent = s;
+  if (!window.katex) return;
+  const hasDelim = /\$|\\\(|\\\[/.test(s);
+  if (!hasDelim && !looksProse(s) && /[\\^_{}]|=/.test(s) && s.length < 400){
+    try { katex.render(s, el, {throwOnError: true}); return; }
+    catch (e) { el.textContent = s; }   /* not pure LaTeX — leave as text */
+  }
+  try {
+    renderMathInElement(el, {throwOnError: false, errorColor: "var(--s6)",
+                             delimiters: DELIMS});
+  } catch (e) { /* keep plain text */ }
+}
+
+async function api(path, opts){
+  const r = await fetch("/api" + path, opts && {
+    method: opts.method || "POST",
+    headers: {"content-type": "application/json"},
+    body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
+  });
+  if (!r.ok){
+    let msg; try { msg = (await r.json()).detail; } catch (e) { msg = r.statusText; }
+    throw new Error(msg || ("HTTP " + r.status));
+  }
+  return r.status === 204 ? null : r.json();
+}
+
+/* --------------------------------------------------------------- state */
+let S = null;            /* current session json (server is authoritative) */
+let ES = null;           /* EventSource */
+let live = null;         /* {turn_id, text} while agent prose streams */
+let busy = false;
+
+/* ---------------------------------------------------------------- home */
+async function renderHome(){
+  $("home").classList.add("on"); $("app").classList.remove("on");
+  let list;
+  try { list = await api("/sessions"); }
+  catch (e) { $("sessList").innerHTML = `<div id="err">${esc(e.message)}</div>`; return; }
+  $("sessList").innerHTML = list.length ? "" :
+    '<div style="color:var(--ink-muted)">none yet</div>';
+  for (const s of list){
+    const row = document.createElement("div");
+    row.className = "srow";
+    row.innerHTML = `<span class="badge ${esc(s.status)}">${esc(s.status.replace(/_/g," "))}</span>
+      <span class="t">${esc(s.title)}</span>
+      <span class="m">${s.n_steps} steps · ${esc(s.updated.slice(0,10))}</span>
+      <button class="del" title="delete">✕</button>`;
+    row.onclick = () => location.search = "?session=" + s.id;
+    row.querySelector(".del").onclick = async ev => {
+      ev.stopPropagation();
+      if (!confirm(`Delete "${s.title}"?`)) return;
+      await api("/sessions/" + s.id, {method: "DELETE"});
+      renderHome();
+    };
+    $("sessList").appendChild(row);
+  }
+}
+
+$("newBtn").onclick = async () => {
+  const title = $("newTitle").value.trim(), texStr = $("newTex").value.trim();
+  $("err").textContent = "";
+  if (!title && !texStr){ $("err").textContent = "give a title or a statement"; return; }
+  try {
+    const s = await api("/sessions", {body: {title, tex: texStr}});
+    location.search = "?session=" + s.id;
+  } catch (e) { $("err").textContent = e.message; }
+};
+
+/* ------------------------------------------------------------- session */
+async function openSession(sid){
+  S = await api("/sessions/" + sid);
+  $("home").classList.remove("on"); $("app").classList.add("on");
+  setBusy(!!S.busy);
+  renderAll();
+  connectEvents(sid);
+}
+
+function connectEvents(sid){
+  if (ES) ES.close();
+  ES = new EventSource("/api/sessions/" + sid + "/events");
+  ES.addEventListener("turn_started", e => {
+    const d = JSON.parse(e.data);
+    live = {turn_id: d.turn_id, text: ""};
+    setBusy(true); renderLive();
+  });
+  ES.addEventListener("agent_text", e => {
+    const d = JSON.parse(e.data);
+    if (!live || live.turn_id !== d.turn_id) live = {turn_id: d.turn_id, text: ""};
+    live.text += d.text;
+    renderLive();
+  });
+  ES.addEventListener("tool_activity", e => {
+    const d = JSON.parse(e.data);
+    $("ticker").textContent = `⚙ ${d.tool}: ${d.detail || ""}`;
+  });
+  ES.addEventListener("state_patch", e => {
+    S = JSON.parse(e.data).session;
+    renderAll();
+  });
+  ES.addEventListener("turn_done", () => {
+    live = null; $("ticker").textContent = "";
+    setBusy(false); renderLive();
+  });
+  ES.addEventListener("error", e => {           /* server-sent error events */
+    if (e.data){
+      const d = JSON.parse(e.data);
+      live = null; renderLive();
+      appendNotice("error: " + d.message);
+    }                                            /* else: transport hiccup; EventSource retries */
+  });
+}
+
+function setBusy(b){
+  busy = b;
+  $("busy").classList.toggle("on", b);
+  $("submitBtn").disabled = b;
+  document.querySelectorAll("#ftr .act").forEach(el => el.disabled = b);
+}
+
+function appendNotice(msg){
+  const div = document.createElement("div");
+  div.className = "bubble agent";
+  div.innerHTML = `<div class="who" style="color:var(--s6)">system</div>${esc(msg)}`;
+  $("chat").appendChild(div);
+  scrollFlow();
+}
+
+function scrollFlow(){ const f = $("flow"); f.scrollTop = f.scrollHeight; }
+
+/* ------------------------------------------------------------ rendering */
+function renderAll(){ renderHeader(); renderSteps(); renderChat(); renderSide(); }
+
+function renderHeader(){
+  $("hTitle").textContent = S.theorem.title;
+  const st = $("hStatus");
+  st.className = "badge " + S.status;
+  st.textContent = S.status.replace(/_/g, " ");
+  st.title = S.status_note || "";
+  const src = S.source.kind === "map_node" ? "from the conjecture map" : "user-entered";
+  const c = S.theorem.context;
+  $("hMeta").textContent = [src, c && c.cat, S.mode === "guided" ? "guided demo" : null]
+    .filter(Boolean).join(" · ");
+  tex($("hThm"), S.theorem.tex || S.theorem.text || "");
+}
+
+function renderSteps(){
+  const box = $("steps");
+  box.innerHTML = S.steps.length ? "" :
+    '<div style="color:var(--ink-muted);margin-bottom:10px">no steps yet — enter the first one below</div>';
+  for (const st of S.steps){
+    const div = document.createElement("div");
+    div.className = "step";
+    div.innerHTML = `
+      <div class="top">
+        <span class="num">${st.index}</span>
+        ${st.kind !== "step" ? `<span class="kind">${esc(st.kind)}</span>` : ""}
+        <span class="badge ${esc(st.status)}">${esc(st.status.replace(/_/g," "))}</span>
+        <span class="who">${st.author === "human" ? "you" : "agent"}</span>
+      </div>
+      <div class="stmt"></div>
+      ${st.justification ? `<div class="just">— ${esc(st.justification)}</div>` : ""}
+      ${st.discovery_rationale ? `<div class="just" title="discovery rationale">✦ ${esc(st.discovery_rationale)}</div>` : ""}
+      ${st.agent_comment ? `<details ${st.status === "verified" ? "" : "open"}>
+        <summary>agent commentary</summary><div class="comment"></div></details>` : ""}`;
+    tex(div.querySelector(".stmt"), st.statement_tex);
+    if (st.agent_comment) tex(div.querySelector(".comment"), st.agent_comment);
+    box.appendChild(div);
+  }
+}
+
+function renderChat(){
+  const box = $("chat");
+  box.innerHTML = "";
+  for (const m of S.chat){
+    const div = document.createElement("div");
+    div.className = "bubble " + (m.role === "user" ? "user" : "agent");
+    div.innerHTML = `<div class="who">${m.role === "user" ?
+      "you" + (m.action && m.action !== "chat" ? " · " + esc(m.action.replace(/_/g," ")) : "")
+      : "agent"}</div><div class="txt"></div>`;
+    tex(div.querySelector(".txt"), m.text);
+    box.appendChild(div);
+  }
+  scrollFlow();
+}
+
+function renderLive(){
+  const box = $("live");
+  if (!live || !live.text){ box.innerHTML = ""; return; }
+  box.innerHTML = `<div class="bubble agent"><div class="who">agent</div><span class="txt"></span><span class="cursor"></span></div>`;
+  box.querySelector(".txt").textContent = live.text;   /* rendered as tex on state_patch */
+  scrollFlow();
+}
+
+function renderSide(){
+  /* Lakatos counterexample cards */
+  const DIAG = {
+    local_not_global: "local — breaks a proof step, not the conjecture",
+    global_and_local: "global + local — refutes the conjecture through a step",
+    global_not_local: "global — refutes the conjecture; a hidden lemma is missing",
+  };
+  const cx = $("cxBox");
+  cx.innerHTML = S.counterexamples.length ? '<div class="cap">counterexamples</div>' : "";
+  for (const c of S.counterexamples){
+    const div = document.createElement("div");
+    div.className = "cx";
+    div.innerHTML = `<div class="kind">${esc(DIAG[c.diagnostic] || c.diagnostic)}</div>
+      <div class="desc"></div>
+      ${c.guilty_step_id ? `<div class="note">guilty step: ${esc(c.guilty_step_id)}</div>` : ""}
+      <div class="note">suggested repair: <b>${esc(c.suggested_repair.replace(/_/g," "))}</b></div>
+      ${c.repair_note ? `<div class="note"></div>` : ""}`;
+    tex(div.querySelector(".desc"), c.description_tex);
+    if (c.repair_note) tex(div.querySelectorAll(".note")[c.guilty_step_id ? 2 : 1], c.repair_note);
+    cx.appendChild(div);
+  }
+  /* evidence log */
+  const box = $("evList");
+  box.innerHTML = S.evidence.length ? "" : '<div style="color:var(--ink-muted)">empty</div>';
+  const ICON = {script: "⌨", computation: "∑", citation: "¶", counterexample: "✗", lean: "λ", note: "·"};
+  for (const ev of [...S.evidence].reverse()){
+    const div = document.createElement("div");
+    div.className = "ev";
+    const link = ev.script_path ?
+      ` · <a href="/api/sessions/${esc(S.id)}/files/${esc(ev.script_path)}" target="_blank">${esc(ev.script_path.split("/").pop())}</a>` : "";
+    div.innerHTML = `<div class="k">${ICON[ev.kind] || "·"} ${esc(ev.kind)} ·
+        <span class="badge ${esc(ev.grade)}">${esc(ev.grade.replace(/_/g," "))}</span>
+        ${ev.step_id ? " · " + esc(ev.step_id) : ""}${link}</div>
+      <div class="sum"></div>
+      ${ev.output_excerpt ? `<div class="out">${esc(ev.output_excerpt)}</div>` : ""}`;
+    tex(div.querySelector(".sum"), ev.summary);
+    box.appendChild(div);
+  }
+}
+
+/* -------------------------------------------------------------- actions */
+$("submitBtn").onclick = submitStep;
+$("stmt").addEventListener("keydown", e => {
+  if ((e.metaKey || e.ctrlKey) && e.key === "Enter") submitStep();
+});
+
+async function submitStep(){
+  const statement = $("stmt").value.trim();
+  if (!statement || busy) return;
+  try {
+    await api(`/sessions/${S.id}/steps`, {body: {statement, justification: $("just").value.trim()}});
+    $("stmt").value = ""; $("just").value = "";
+  } catch (e) { appendNotice(e.message); }
+}
+
+document.querySelectorAll("#ftr .act").forEach(btn => btn.onclick = async () => {
+  if (busy) return;
+  const act = btn.dataset.act;
+  const body = {type: act};
+  if (act === "chat"){
+    const text = $("stmt").value.trim();
+    if (!text){ $("stmt").focus(); return; }
+    body.text = text;
+  }
+  try {
+    await api(`/sessions/${S.id}/actions`, {body});
+    if (act === "chat") $("stmt").value = "";
+  } catch (e) { appendNotice(e.message); }
+});
+
+$("intBtn").onclick = () => api(`/sessions/${S.id}/interrupt`).catch(() => {});
+
+/* ----------------------------------------------------------------- boot */
+async function boot(){
+  const q = new URLSearchParams(location.search);
+  try {
+    if (q.get("session")) return await openSession(q.get("session"));
+    if (q.get("node")){
+      /* reuse an open session for this map node rather than piling up dupes */
+      const list = await api("/sessions");
+      for (const s of list){
+        if (s.status !== "in_progress") continue;
+        const full = await api("/sessions/" + s.id);
+        if (full.source.node_id === q.get("node")){
+          history.replaceState(null, "", "?session=" + s.id);
+          return await openSession(s.id);
+        }
+      }
+      const s = await api("/sessions", {body: {node_id: q.get("node")}});
+      history.replaceState(null, "", "?session=" + s.id);
+      return await openSession(s.id);
+    }
+    if (q.get("demo")){
+      /* guided demos land in plan step 6 */
+      const s = await api("/sessions", {body: {title: "demo placeholder (step 6)",
+                                               tex: "", mode: "guided", demo: q.get("demo")}});
+      history.replaceState(null, "", "?session=" + s.id);
+      return await openSession(s.id);
+    }
+    await renderHome();
+  } catch (e) {
+    $("home").classList.add("on");
+    $("err").textContent = e.message;
+  }
+}
+boot();
+</script>
+</body>
+</html>
