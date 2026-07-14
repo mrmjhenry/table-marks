@@ -97,3 +97,33 @@ A scheduled job re-runs the pipeline incrementally as the dataset ingests new
 arXiv papers — every stage is now hash-keyed and incremental, so deltas cost
 pennies. Schedule 00→05 (+07/08/09 deltas), re-render, optionally republish.
 Best done last, once item 2 settles the pipeline's final shape.
+
+---
+
+## Proof workspace
+
+The interactive proving app (`app/`, documented in the README) shipped in nine
+steps. Follow-on ideas:
+
+### W1. Landing page
+
+Today `/` serves the map and `/workspace` serves the proving app; there's no
+single entry point tying them together. Add a small landing page (served at
+`/` with the map moved to e.g. `/map`, or a new `/home`) that links the major
+destinations — the conjecture map, the proof workspace (with its session list
+and free-form entry), and the guided √2 demo — plus a one-line description of
+each. Keep it in the repo's no-build vanilla-HTML style, reusing the map's
+design tokens. Small.
+
+### W2. Export the whole proof as Lean
+
+`assemble_lean` already has the agent chain the per-step lemmas into a final
+theorem (`lean_assembly`), but there's no one-click way to pull the complete
+formalization out. Add an **export** action that emits a single self-contained
+`.lean` file for the entire proof — imports, every step lemma, and the final
+theorem, in dependency order, with the informal statement of each step as a
+doc comment — downloadable from the workspace (and written to the session dir).
+Two tiers: (a) export what's already formalized as-is; (b) a "formalize entire
+proof" convenience that runs the lean-formalizer over any not-yet-formalized
+steps first, then assembles and exports. Gated on the Lean toolchain like the
+rest of the Lean layer. Small–medium.
