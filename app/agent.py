@@ -31,7 +31,8 @@ from claude_agent_sdk import (AssistantMessage, ClaudeAgentOptions,
                               create_sdk_mcp_server, tool)
 
 from . import prompts, store
-from .store import ROOT
+from .lean import checker as lean_checker, lean_result_word
+from .store import ROOT, now_iso
 
 TURN_TIMEOUT = 15 * 60          # hard cap per agent turn (prove_remaining is long)
 IDLE_TEARDOWN = 10 * 60         # disconnect a session's CLI subprocess after this
@@ -43,7 +44,9 @@ ALLOWED_TOOLS = [
     "mcp__proof__log_evidence", "mcp__proof__report_counterexample",
     "mcp__proof__set_status",
 ]
-DISALLOWED_TOOLS = ["Task", "WebFetch", "WebSearch", "TodoWrite",
+LEAN_TOOLS = ["mcp__proof__lean_check", "mcp__proof__set_lean",
+              "Task"]        # Task: spawn the lean-formalizer subagent
+DISALLOWED_TOOLS = ["WebFetch", "WebSearch", "TodoWrite",
                     "EnterPlanMode", "ExitPlanMode", "NotebookEdit"]
 
 
@@ -280,8 +283,75 @@ def make_proof_server(runner: "ProofRunner"):
         commit()
         return _text(f"session status -> {a['status']}")
 
-    return create_sdk_mcp_server(name="proof", tools=[
-        add_step, update_step, log_evidence, report_counterexample, set_status])
+    tools = [add_step, update_step, log_evidence, report_counterexample,
+             set_status]
+
+    if lean_checker.available:
+
+        @tool("lean_check",
+              "Compile Lean 4 code against the pinned Mathlib and return "
+              "diagnostics. Pure check — does not touch the proof state. "
+              "Iterate here until your code compiles.",
+              {"type": "object",
+               "properties": {"code": {"type": "string"}},
+               "required": ["code"]})
+        async def lean_check_tool(a):
+            res = await lean_checker.check(a["code"])
+            word = lean_result_word(res)
+            msgs = "\n".join(f"{e['severity']} L{e['line']}:{e['col']}: {e['message']}"
+                             for e in res["errors"][:12])
+            return _text(f"result: {word} ({res['sorries']} sorries, "
+                         f"{res['duration_s']}s)\n{msgs}".strip())
+
+        @tool("set_lean",
+              "Attach the FINAL Lean formalization to a step (or pass "
+              "step_id='assembly' for the whole-proof file). Recompiles "
+              "authoritatively, marks faithfulness affirmed by you — only "
+              "call after genuinely reviewing that the formal statement "
+              "matches the informal one.",
+              {"type": "object",
+               "properties": {
+                   "step_id": {"type": "string",
+                               "description": "a step id, or 'assembly'"},
+                   "code": {"type": "string"},
+                   "faithful_note": {"type": "string",
+                                     "description": "why the formal statement is "
+                                                    "faithful (quantifiers, hypotheses, "
+                                                    "no trivialization)"}},
+               "required": ["step_id", "code", "faithful_note"]})
+        async def set_lean_tool(a):
+            s = sess()
+            target = a["step_id"]
+            if target != "assembly" and not store.get_step(s, target):
+                return _text(f"no step {target}", is_error=True)
+            scratch = store.workspace_dir(runner.sid) / "lean" / f"{target}.lean"
+            res = await lean_checker.check(a["code"], scratch_path=scratch)
+            word = lean_result_word(res)
+            rec = {"code": a["code"], "author": "agent", "check": word,
+                   "sorries": res["sorries"], "errors": res["errors"],
+                   "faithful": "affirmed_agent",
+                   "faithful_note": a["faithful_note"],
+                   "checked_at": now_iso()}
+            if target == "assembly":
+                s["lean_assembly"] = rec
+            else:
+                store.get_step(s, target)["lean"] = rec
+            grade = {"ok": "verified", "has_sorries": "partially_verified",
+                     "failed": "unverified"}[word]
+            store.add_evidence(
+                s, kind="lean", grade=grade,
+                summary=f"Lean formalization of {target}: {word}, "
+                        f"{res['sorries']} sorries",
+                script_path=f"workspace/lean/{target}.lean",
+                step_id=None if target == "assembly" else target)
+            commit()
+            msgs = "\n".join(f"{e['severity']} L{e['line']}: {e['message'][:200]}"
+                             for e in res["errors"][:8])
+            return _text(f"stored ({word})\n{msgs}".strip())
+
+        tools += [lean_check_tool, set_lean_tool]
+
+    return create_sdk_mcp_server(name="proof", tools=tools)
 
 
 # ---------------------------------------------------------------- runner
@@ -325,8 +395,8 @@ class ProofRunner:
                            "append": prompts.build_system_prompt(sess)},
             resume=resume,
             mcp_servers={"proof": self.mcp},
-            allowed_tools=ALLOWED_TOOLS,
-            disallowed_tools=DISALLOWED_TOOLS,
+            allowed_tools=ALLOWED_TOOLS + (LEAN_TOOLS if lean_checker.available else []),
+            disallowed_tools=DISALLOWED_TOOLS + ([] if lean_checker.available else ["Task"]),
             can_use_tool=make_permission_handler(self.sid),
             max_turns=MAX_TURNS,
             include_partial_messages=True,

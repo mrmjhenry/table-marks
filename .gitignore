@@ -5,5 +5,6 @@ __pycache__/
 key.log
 .claude/*
 !.claude/skills/
+!.claude/agents/
 conjecture_map_local.html
 sessions/

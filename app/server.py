@@ -27,7 +27,8 @@ from fastapi.responses import (FileResponse, JSONResponse, PlainTextResponse,
 from fastapi.staticfiles import StaticFiles
 
 from . import store
-from .store import ROOT
+from .lean import checker as lean_checker, lean_result_word
+from .store import ROOT, now_iso
 
 
 @contextlib.asynccontextmanager
@@ -46,7 +47,8 @@ app = FastAPI(title="proof-workspace", docs_url=None, redoc_url=None,
               lifespan=lifespan)
 
 ACTION_TYPES = {"check_step", "hint", "suggest_next", "prove_subgoal",
-                "prove_remaining", "challenge", "chat"}
+                "prove_remaining", "challenge", "chat",
+                "formalize_step", "assemble_lean"}
 
 
 # ------------------------------------------------------------------ hubs
@@ -83,6 +85,14 @@ class Hub:
             if sess is None:      # deleted while queued
                 continue
             self.busy = True
+            # user-visible record of what was asked, written HERE (the
+            # worker owns the session during a turn — writing it at submit
+            # time would race with a running turn's save)
+            if action.get("_chat"):
+                store.add_chat(sess, "user", action.pop("_chat"),
+                               action=action["type"])
+                store.save_session(sess)
+                self.emit("state_patch", {"session": sess})
             turn_id = store.next_turn_id(sess)
             self.emit("turn_started", {"turn_id": turn_id,
                                        "action": action["type"]})
@@ -257,10 +267,18 @@ def session_delete(sid: str):
     return {"deleted": sid}
 
 
+def _reject_if_busy(sid: str) -> None:
+    """Direct-mutation endpoints must not race a running agent turn: the
+    runner saves its own session dict at turn end and would clobber us."""
+    if get_hub(sid).busy:
+        raise HTTPException(409, "an agent turn is running — try again when it finishes")
+
+
 @app.post("/api/sessions/{sid}/steps")
 async def step_submit(sid: str, request: Request):
     """Human submits a proof step; an agent check turn is queued."""
     sess = _load_or_404(sid)
+    _reject_if_busy(sid)
     body = await request.json()
     statement = (body.get("statement") or "").strip()
     if not statement:
@@ -287,6 +305,8 @@ async def action_submit(sid: str, request: Request):
         raise HTTPException(400, f"no step {body.get('step_id')!r}")
     if kind == "chat" and not (body.get("text") or "").strip():
         raise HTTPException(400, "chat needs text")
+    if kind in ("formalize_step", "assemble_lean") and not lean_checker.available:
+        raise HTTPException(400, "Lean toolchain not installed on this machine")
     ACTION_PHRASE = {
         "check_step": "re-check step {step_id}",
         "hint": "give me a hint",
@@ -294,21 +314,99 @@ async def action_submit(sid: str, request: Request):
         "prove_subgoal": "take over subgoal {step_id}",
         "prove_remaining": "take over and prove the remaining",
         "challenge": "challenge the conjecture",
+        "formalize_step": "formalize step {step_id} in Lean",
+        "assemble_lean": "assemble the full Lean proof",
     }
     text = (body.get("text") or "").strip() or \
         ACTION_PHRASE[kind].format(step_id=body.get("step_id", "?"))
-    store.add_chat(sess, "user", text, action=kind)
-    store.save_session(sess)
     hub = get_hub(sid)
-    hub.emit("state_patch", {"session": sess})
-    hub.submit({k: v for k, v in body.items() if k in ("type", "step_id", "text")})
+    action = {k: v for k, v in body.items() if k in ("type", "step_id", "text")}
+    action["_chat"] = text          # recorded by the worker at turn start
+    hub.submit(action)
     return {"queued": True, "pending": hub.queue.qsize()}
+
+
+@app.get("/api/lean/status")
+def lean_status():
+    return {"available": lean_checker.available,
+            "toolchain": lean_checker.toolchain,
+            "mathlib_rev": lean_checker.mathlib_rev}
+
+
+def _lean_record(code: str, res: dict, author: str) -> dict:
+    return {"code": code, "author": author,
+            "check": lean_result_word(res), "sorries": res["sorries"],
+            "errors": res["errors"], "faithful": "unreviewed",
+            "checked_at": now_iso()}
+
+
+EVIDENCE_GRADE = {"ok": "verified", "has_sorries": "partially_verified",
+                  "failed": "unverified"}
+
+
+@app.post("/api/sessions/{sid}/lean/check")
+async def lean_check_user(sid: str, request: Request):
+    """User-provided Lean: pure compiler round-trip, no agent involved."""
+    sess = _load_or_404(sid)
+    _reject_if_busy(sid)
+    if not lean_checker.available:
+        raise HTTPException(400, "Lean toolchain not installed on this machine")
+    body = await request.json()
+    code = (body.get("code") or "").strip()
+    if not code:
+        raise HTTPException(400, "code required")
+    step_id = body.get("step_id")
+    target = "assembly" if body.get("assembly") else step_id
+    if target != "assembly" and not store.get_step(sess, step_id or ""):
+        raise HTTPException(400, f"no step {step_id!r}")
+
+    scratch = store.workspace_dir(sid) / "lean" / f"{target}.lean"
+    res = await lean_checker.check(code, scratch_path=scratch)
+    rec = _lean_record(code, res, "human")
+    word = rec["check"]
+    if target == "assembly":
+        sess["lean_assembly"] = rec
+        label = "assembled proof"
+    else:
+        store.get_step(sess, step_id)["lean"] = rec
+        label = f"step {step_id}"
+    store.add_evidence(sess, kind="lean", grade=EVIDENCE_GRADE[word],
+                       summary=f"Lean check of {label} (human-provided): {word}, "
+                               f"{res['sorries']} sorries, "
+                               f"{sum(1 for e in res['errors'] if e['severity']=='error')} errors",
+                       script_path=f"workspace/lean/{target}.lean",
+                       step_id=None if target == "assembly" else step_id)
+    store.save_session(sess)
+    get_hub(sid).emit("state_patch", {"session": sess})
+    return {"check": word, **res}
+
+
+@app.post("/api/sessions/{sid}/lean/affirm")
+async def lean_affirm(sid: str, request: Request):
+    """Human confirms the formal statement matches the informal step."""
+    sess = _load_or_404(sid)
+    _reject_if_busy(sid)
+    body = await request.json()
+    if body.get("assembly"):
+        rec = sess.get("lean_assembly")
+    else:
+        step = store.get_step(sess, body.get("step_id", ""))
+        rec = step and step.get("lean")
+    if not rec:
+        raise HTTPException(400, "nothing formalized there yet")
+    if rec["check"] != "ok":
+        raise HTTPException(400, "only a clean compile can be affirmed")
+    rec["faithful"] = "affirmed_human"
+    store.save_session(sess)
+    get_hub(sid).emit("state_patch", {"session": sess})
+    return {"faithful": "affirmed_human"}
 
 
 @app.post("/api/sessions/{sid}/guided")
 async def guided_cursor(sid: str, request: Request):
     """Persist guided-demo progress so a reload resumes the walkthrough."""
     sess = _load_or_404(sid)
+    _reject_if_busy(sid)
     body = await request.json()
     cur = body.get("cursor")
     if not isinstance(cur, int) or cur < 0:

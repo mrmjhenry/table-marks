@@ -69,6 +69,27 @@ Write prose for a mathematician: concise, honest about uncertainty, LaTeX
 inside $...$ (the UI renders it with KaTeX).
 """
 
+LEAN_PROTOCOL = """
+## Lean formalization (available on this machine)
+
+Two more tools exist: `lean_check` (compile Lean 4 code against the pinned
+Mathlib; pure check) and `set_lean` (attach the final formalization to a
+step, or to 'assembly' for the whole-proof file).
+
+For formalization work, DELEGATE the compile-fix loop: spawn the
+`lean-formalizer` subagent (Task/Agent tool) with the exact informal
+statement, its informal justification, and any already-formalized
+dependency lemmas. Spawn it SYNCHRONOUSLY (run_in_background: false) —
+your turn must not end until the subagent's result is back and processed;
+"waiting" for a background agent ends your turn and strands the job.
+It returns STATUS / CODE / FAITHFULNESS. Then YOU review faithfulness
+independently — same quantifiers, same hypotheses, no trivialization; when
+in doubt, try `lean_check` on the NEGATION of the statement (if the
+negation also proves easily, something is wrong) — and only then call
+`set_lean` with your faithfulness reasoning. A compiling proof of the
+wrong statement is worth nothing; say so plainly when you're unsure.
+"""
+
 DEMO_LINE = """
 ## Teaching session
 
@@ -128,6 +149,9 @@ def build_system_prompt(sess: dict) -> str:
     if ctx:
         parts += ["", ctx]
     parts += [TOOL_PROTOCOL, MODE_CONTRACT]
+    from .lean import checker as _lean
+    if _lean.available:
+        parts.append(LEAN_PROTOCOL)
     if sess.get("demo"):
         parts.append(DEMO_LINE)
     return "\n".join(parts)
@@ -204,6 +228,38 @@ def action_prompt(sess: dict, action: dict) -> str:
                 "verified, no wiggle room), also call `set_status(refuted)` "
                 "with the best revised conjecture in the note. Report an "
                 "empty search honestly as supporting evidence only.")
+    if kind == "formalize_step":
+        step = next(s for s in sess["steps"] if s["id"] == action["step_id"])
+        deps = [s for s in sess["steps"]
+                if s.get("lean") and s["lean"]["check"] == "ok"
+                and s["id"] != step["id"]]
+        dep_note = ("Already-formalized steps you may build on: "
+                    + ", ".join(f"{s['id']} (lemma {s['id']})" for s in deps)
+                    + "."
+                    if deps else "No dependencies are formalized yet.")
+        return (f"The human asks you to FORMALIZE this {_step_line(step)}\n\n"
+                f"{dep_note}\n\n"
+                "Spawn the lean-formalizer subagent SYNCHRONOUSLY "
+                "(run_in_background: false — a backgrounded subagent strands "
+                "the job when your turn ends) with the statement, its "
+                "justification, and the dependency lemmas' code (read their "
+                "files under lean/ in your cwd if needed). Review the "
+                "returned FAITHFULNESS critically, then call `set_lean` "
+                f"(step_id='{step['id']}') with your own faithfulness note. "
+                "Name the Lean declaration after the step id.")
+    if kind == "assemble_lean":
+        done = [s for s in sess["steps"]
+                if s.get("lean") and s["lean"]["check"] == "ok"]
+        return ("The human asks you to ASSEMBLE the full Lean proof: one "
+                "file proving the main theorem by chaining the formalized "
+                "step lemmas ("
+                + (", ".join(s["id"] for s in done) or "none yet — say so and stop")
+                + "). Their code is under lean/ in your cwd. Spawn the "
+                "lean-formalizer subagent for the assembly SYNCHRONOUSLY "
+                "(run_in_background: false), review "
+                "faithfulness of the FINAL theorem statement against the "
+                "session's theorem, then call `set_lean` with "
+                "step_id='assembly'.")
     if kind == "chat":
         return action.get("text", "")
     raise ValueError(f"unknown action type {kind!r}")

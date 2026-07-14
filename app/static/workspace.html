@@ -74,6 +74,20 @@
   .step .sact { font-size: 10.5px; padding: 1px 7px; opacity: 0; transition: opacity 0.12s; }
   .step:hover .sact { opacity: 1; }
   body.busy .sact { opacity: 0 !important; pointer-events: none; }
+
+  /* Lean layer */
+  .lbadge { font-family: ui-monospace, monospace; }
+  .ldrawer { margin-top: 7px; }
+  .ldrawer summary { font-size: 11.5px; color: var(--ink-muted); cursor: pointer; user-select: none; }
+  .ldrawer textarea { width: 100%; min-height: 90px; font: 11.5px/1.5 ui-monospace, monospace;
+    color: var(--ink-1); background: var(--page); border: 1px solid var(--border);
+    border-radius: 8px; padding: 7px 9px; resize: vertical; outline: none; margin-top: 6px; }
+  .ldrawer .lrow { display: flex; gap: 8px; margin-top: 6px; align-items: center; }
+  .ldrawer .ldiag { font: 11px/1.5 ui-monospace, monospace; color: var(--s6);
+    background: var(--page); border-radius: 6px; padding: 6px 8px; margin-top: 6px;
+    white-space: pre-wrap; max-height: 140px; overflow-y: auto; }
+  .ldrawer .lmsg { font-size: 11.5px; color: var(--ink-muted); }
+  #hdr .asm { margin-left: 6px; }
   .step .stmt { margin: 6px 0 2px; overflow-x: auto; }
   .step .just { color: var(--ink-2); font-size: 12px; }
   .step details { margin-top: 6px; }
@@ -179,6 +193,7 @@
       <a href="/workspace" title="all sessions">←</a>
       <h1 id="hTitle"></h1>
       <span class="badge" id="hStatus"></span>
+      <span id="hAsm" class="asm"></span>
       <span class="meta" id="hMeta"></span>
     </div>
     <div class="thm" id="hThm"></div>
@@ -288,6 +303,22 @@ let live = null;         /* {turn_id, text} while agent prose streams */
 let busy = false;
 let DEMO = null;         /* guided-walkthrough script (app/demos/*.json) */
 let coachCursor = 0;     /* index into DEMO.steps */
+let LEAN = {available: false};   /* /api/lean/status, fetched once */
+const leanOpen = new Set();      /* step ids with the lean drawer open */
+const leanDraft = {};            /* step id -> unsaved textarea content */
+
+/* Lean badge: word + css class for a step/assembly lean record */
+function leanBadge(rec){
+  if (!rec) return null;
+  if (rec.check === "ok")
+    return rec.faithful !== "unreviewed"
+      ? {word: "λ machine-checked", cls: "verified"}
+      : {word: "λ compiles · unreviewed", cls: "partially_verified"};
+  if (rec.check === "has_sorries")
+    return {word: `λ ${rec.sorries} sorr${rec.sorries === 1 ? "y" : "ies"}`,
+            cls: "partially_verified"};
+  return {word: "λ failed", cls: "refuted"};
+}
 
 /* ---------------------------------------------------------------- home */
 async function renderHome(){
@@ -461,6 +492,35 @@ function renderHeader(){
   $("hMeta").textContent = [src, c && c.cat, S.mode === "guided" ? "guided demo" : null]
     .filter(Boolean).join(" · ");
   tex($("hThm"), S.theorem.tex || S.theorem.text || "");
+  /* Lean assembly: badge + assemble/affirm controls */
+  const asm = $("hAsm");
+  asm.innerHTML = "";
+  if (LEAN.available){
+    const rec = S.lean_assembly;
+    const anyOk = S.steps.some(s => s.lean && s.lean.check === "ok");
+    if (rec){
+      const lb = leanBadge(rec);
+      asm.innerHTML = `<a class="badge lbadge ${lb.cls}" target="_blank"
+        title="view the assembled Lean file"
+        href="/api/sessions/${esc(S.id)}/files/workspace/lean/assembly.lean"
+        style="text-decoration:none">${esc(lb.word.replace("λ", "λ proof"))}</a>`;
+      if (rec.check === "ok" && rec.faithful === "unreviewed"){
+        const b = document.createElement("button");
+        b.className = "mini"; b.textContent = "affirm faithful";
+        b.onclick = () => api(`/sessions/${S.id}/lean/affirm`,
+                              {body: {assembly: true}}).catch(e => appendNotice(e.message));
+        asm.appendChild(b);
+      }
+    }
+    if (anyOk){
+      const b = document.createElement("button");
+      b.className = "mini"; b.textContent = rec ? "re-assemble" : "assemble lean proof";
+      b.title = "have the agent chain the formalized step lemmas into the final theorem";
+      b.onclick = () => { if (!busy) api(`/sessions/${S.id}/actions`,
+        {body: {type: "assemble_lean"}}).catch(e => appendNotice(e.message)); };
+      asm.appendChild(b);
+    }
+  }
 }
 
 function renderSteps(){
@@ -468,6 +528,7 @@ function renderSteps(){
   box.innerHTML = S.steps.length ? "" :
     '<div style="color:var(--ink-muted);margin-bottom:10px">no steps yet — enter the first one below</div>';
   for (const st of S.steps){
+    const lb = LEAN.available ? leanBadge(st.lean) : null;
     const div = document.createElement("div");
     div.className = "step";
     div.innerHTML = `
@@ -475,6 +536,7 @@ function renderSteps(){
         <span class="num">${st.index}</span>
         ${st.kind !== "step" ? `<span class="kind">${esc(st.kind)}</span>` : ""}
         <span class="badge ${esc(st.status)}">${esc(st.status.replace(/_/g," "))}</span>
+        ${lb ? `<span class="badge lbadge ${lb.cls}" title="Lean formalization status">${esc(lb.word)}</span>` : ""}
         <span class="who">${st.author === "human" ? "you" : "agent"}</span>
         <button class="mini sact" data-act="check_step" data-step="${esc(st.id)}"
           title="ask the agent to (re)check this step">check</button>
@@ -485,7 +547,19 @@ function renderSteps(){
       ${st.justification ? `<div class="just jr-j">— </div>` : ""}
       ${st.discovery_rationale ? `<div class="just jr-r" title="discovery rationale">✦ </div>` : ""}
       ${st.agent_comment ? `<details ${st.status === "verified" ? "" : "open"}>
-        <summary>agent commentary</summary><div class="comment"></div></details>` : ""}`;
+        <summary>agent commentary</summary><div class="comment"></div></details>` : ""}
+      ${LEAN.available ? `<details class="ldrawer" ${leanOpen.has(st.id) ? "open" : ""}>
+        <summary>lean${st.lean ? " · " + esc(st.lean.check) : ""}</summary>
+        <textarea class="lcode" spellcheck="false"
+          placeholder="import Mathlib   —   theorem ${esc(st.id)} : … := by …"></textarea>
+        <div class="lrow">
+          <button class="mini lcheck">check</button>
+          <button class="mini lform">formalize (agent)</button>
+          <button class="mini laffirm" style="display:none">affirm faithful</button>
+          <span class="lmsg"></span>
+        </div>
+        <pre class="ldiag" style="display:none"></pre>
+      </details>` : ""}`;
     tex(div.querySelector(".stmt"), st.statement_tex);
     if (st.agent_comment) proseHtml(div.querySelector(".comment"), st.agent_comment);
     if (st.justification){
@@ -502,8 +576,52 @@ function renderSteps(){
                       {body: {type: btn.dataset.act, step_id: btn.dataset.step}}); }
       catch (e) { appendNotice(e.message); }
     });
+    if (LEAN.available) wireLeanDrawer(div, st);
     box.appendChild(div);
   }
+}
+
+/* Lean drawer wiring: drafts survive re-renders; check is a direct
+   compiler round-trip, formalize delegates to the agent. */
+function wireLeanDrawer(div, st){
+  const drawer = div.querySelector(".ldrawer");
+  const ta = drawer.querySelector(".lcode");
+  ta.value = leanDraft[st.id] ?? (st.lean ? st.lean.code : "");
+  ta.oninput = () => { leanDraft[st.id] = ta.value; };
+  drawer.ontoggle = () => {
+    if (drawer.open) leanOpen.add(st.id); else leanOpen.delete(st.id);
+  };
+  const msg = drawer.querySelector(".lmsg");
+  const diag = drawer.querySelector(".ldiag");
+  if (st.lean && st.lean.errors && st.lean.errors.length){
+    diag.style.display = "";
+    diag.textContent = st.lean.errors.map(e =>
+      `${e.severity} L${e.line}:${e.col}: ${e.message}`).join("\n");
+  }
+  const affirm = drawer.querySelector(".laffirm");
+  if (st.lean && st.lean.check === "ok" && st.lean.faithful === "unreviewed")
+    affirm.style.display = "";
+  affirm.onclick = async () => {
+    try { await api(`/sessions/${S.id}/lean/affirm`, {body: {step_id: st.id}}); }
+    catch (e) { msg.textContent = e.message; }
+  };
+  drawer.querySelector(".lcheck").onclick = async () => {
+    if (busy) return;
+    const code = ta.value.trim();
+    if (!code){ msg.textContent = "write some Lean first"; return; }
+    msg.textContent = "compiling… (~30s+, Mathlib import)";
+    try {
+      delete leanDraft[st.id];
+      await api(`/sessions/${S.id}/lean/check`, {body: {step_id: st.id, code}});
+      msg.textContent = "";
+    } catch (e) { msg.textContent = e.message; }
+  };
+  drawer.querySelector(".lform").onclick = async () => {
+    if (busy) return;
+    try { await api(`/sessions/${S.id}/actions`,
+                    {body: {type: "formalize_step", step_id: st.id}}); }
+    catch (e) { msg.textContent = e.message; }
+  };
 }
 
 function renderChat(){
@@ -605,6 +723,7 @@ $("intBtn").onclick = () => api(`/sessions/${S.id}/interrupt`).catch(() => {});
 /* ----------------------------------------------------------------- boot */
 async function boot(){
   const q = new URLSearchParams(location.search);
+  try { LEAN = await api("/lean/status"); } catch (e) {}
   try {
     if (q.get("session")) return await openSession(q.get("session"));
     if (q.get("node")){

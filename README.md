@@ -14,6 +14,13 @@ any browser (no server, no network access needed).
 conjecture_map.html                  the map (self-contained; open in a browser)
 scripts/01_fetch.py … 05_render.py   the 5-stage pipeline (see § Reproducing)
 templates/viz.html                   visualization template (canvas force layout)
+app/                                 proof workspace: FastAPI + Claude Agent SDK
+                                     interactive theorem proving (see § Proof
+                                     workspace)
+lean/                                pinned Lean 4 + Mathlib project used by the
+                                     workspace's machine-checking layer (optional)
+.claude/skills|agents/               prove-conjecture skill + lean-formalizer
+                                     subagent driving the workspace agent
 openconjecture_data_dictionary.pdf   data dictionary for the source dataset
 ROADMAP.md                           planned improvements (LaTeX rendering, proof
                                      linking, MSC/topic classification, …)
@@ -22,6 +29,9 @@ data/                                gitignored — cached pipeline intermediate
                                      partly for licensing reasons: derived text
                                      from arXiv papers should not be republished
                                      beyond what the source dataset permits.
+sessions/                            gitignored — proof-workspace sessions (state
+                                     JSON + the scripts/Lean files each proof
+                                     produced)
 ```
 
 Code is MIT-licensed (see `LICENSE`). Conjecture text shown in the map comes from
@@ -367,6 +377,50 @@ no fonts, no fetches — so it works offline and under strict CSPs.
   and are inherited unaudited.
 - **Restatement dedup is exact-text only.** The same conjecture phrased two
   different ways is not collapsed and will appear as two heavily-linked nodes.
+
+## Proof workspace (interactive theorem proving)
+
+The map doubles as a launcher for an interactive proof workspace: pick a
+conjecture (each node panel has a *prove this* button when the local server is
+running), or enter any theorem free-form, then develop the proof step by step
+while an agent — driven by the `prove-conjecture` skill — checks each step,
+gives hints, or takes over delegated subgoals. Every claim is graded
+(verified / partially verified / unverified / refuted), every check the agent
+runs is an executable script saved with the session, and counterexamples get
+the full Lakatos treatment (global/local diagnostic + suggested repair).
+
+```bash
+source .venv/bin/activate           # needs: fastapi uvicorn claude-agent-sdk
+export ANTHROPIC_API_KEY=…          # or an active `claude` CLI login
+uvicorn app.server:app --port 8765
+open http://127.0.0.1:8765/workspace         # or /workspace?demo=sqrt2
+```
+
+- `/` serves the map (with the *prove this* buttons live).
+- `/workspace?demo=sqrt2` is a guided walkthrough of the √2-irrationality
+  proof that teaches the interface — including watching the agent catch a
+  deliberately unjustified step.
+- Sessions persist under `sessions/` and survive server restarts (the agent
+  conversation resumes, or falls back to a state recap).
+- `PROOF_AGENT_MODEL=claude-sonnet-5` (or another model id) overrides the
+  agent model; `PROOF_STUB_AGENT=1` runs a no-API stub for UI development.
+
+**Optional Lean machine-checking.** With a Lean toolchain installed, every
+step can additionally be formalized as a Lean 4 lemma checked against a
+pinned Mathlib — by hand (a per-step editor compiles your Lean with no LLM
+involved) or by the agent (a `lean-formalizer` subagent iterates against the
+compiler, and the main agent must affirm the formal statement's faithfulness
+before the step earns its *machine-checked* badge). One-time setup:
+
+```bash
+brew install elan-init      # Lean version manager (or the official installer)
+cd lean && lake exe cache get   # pinned toolchain + prebuilt Mathlib (~5 GB)
+```
+
+Without the toolchain everything else works; Lean UI simply stays hidden
+(`GET /api/lean/status` reports availability).
+
+---
 
 ## 8. Reproducing
 
