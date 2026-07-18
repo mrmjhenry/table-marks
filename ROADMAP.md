@@ -127,3 +127,42 @@ Two tiers: (a) export what's already formalized as-is; (b) a "formalize entire
 proof" convenience that runs the lean-formalizer over any not-yet-formalized
 steps first, then assembles and exports. Gated on the Lean toolchain like the
 rest of the Lean layer. Small–medium.
+
+### W3. Propagate the skill augmentation into the workspace
+
+The prove-conjecture skill gained (2026-07) a verification protocol with an
+oracle hierarchy (Tier 0 self-check … Tier 4 machine-checked), a novelty
+gate, and a provenance discipline (`.claude/skills/prove-conjecture/`). The
+workspace agent follows the new text automatically, but the workspace could
+*enforce and surface* it:
+
+- An **independent adversarial-verify subagent** (like `lean-formalizer`, in
+  `.claude/agents/`): clean context — receives only the statement and the
+  candidate proof, never the derivation history — run for N rounds from a
+  "Verify independently" action; findings land as evidence entries.
+- **Oracle-tier labels** on step badges and in `set_status` write-ups
+  (extend the `update_step`/`set_status` MCP tools with a `tier` field).
+- **PROVENANCE.md export** per session, generated from the session record
+  (phase history, per-claim tier ledger, errors-found-by-round, citation
+  consulted-vs-recalled table). Pairs naturally with W2's Lean export.
+
+Medium. Design constraint: Tier 3 (cross-model) isn't executable with a
+Claude-only backend — label honestly as Tier 2 until a second model family
+is wired in.
+
+### W4. Ground-truth eval set for the augmented skill
+
+Section 6 of `math-proof-skill-augmentation.md`, deferred from the
+augmentation pass. Build a small labeled set: (a) true statements with known
+proofs at varying difficulty, (b) plausible-looking **false** statements
+(tests the Phase 1 falsification gate — the highest-value addition), (c)
+true statements published long ago under different terminology (tests the
+novelty gate), (d) correct proofs with one planted subtle error (tests the
+Tier 2 adversarial audit). Success criteria: false statements caught in
+Phase 1 before proof attempts; planted errors found within the default 3
+adversarial rounds; no novelty claim without a recorded search; every
+emitted theorem carries an oracle-tier label. Run the pre-augmentation skill
+(git history has it) as baseline; the deliverable is a before/after
+error-catch rate, not a vibe check. Medium–large (mostly authoring the set;
+runs are cheap on sonnet).
+
