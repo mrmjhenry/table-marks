@@ -393,11 +393,14 @@ the full Lakatos treatment (global/local diagnostic + suggested repair).
 source .venv/bin/activate           # needs: fastapi uvicorn claude-agent-sdk
 export ANTHROPIC_API_KEY=…          # or an active `claude` CLI login
 uvicorn app.server:app --port 8765
-open http://127.0.0.1:8765/workspace         # or /workspace?demo=sqrt2
+open http://127.0.0.1:8765/                  # or /?demo=sqrt2
 ```
 
-- `/` serves the map (with the *prove this* buttons live).
-- `/workspace?demo=sqrt2` is a guided walkthrough of the √2-irrationality
+- `/` is the workspace (also at `/workspace` for old links); every page
+  links to the map, and submitting a theorem triggers a discovery pass
+  (TheoremSearch + conjecture-map neighbors + labeled recalled results).
+- `/openconjectures` serves the map (with the *prove this* buttons live).
+- `/?demo=sqrt2` is a guided walkthrough of the √2-irrationality
   proof that teaches the interface — including watching the agent catch a
   deliberately unjustified step.
 - Sessions persist under `sessions/` and survive server restarts (the agent

@@ -105,15 +105,11 @@ Best done last, once item 2 settles the pipeline's final shape.
 The interactive proving app (`app/`, documented in the README) shipped in nine
 steps. Follow-on ideas:
 
-### W1. Landing page
+### W1. Landing page — ✅ shipped (2026-07)
 
-Today `/` serves the map and `/workspace` serves the proving app; there's no
-single entry point tying them together. Add a small landing page (served at
-`/` with the map moved to e.g. `/map`, or a new `/home`) that links the major
-destinations — the conjecture map, the proof workspace (with its session list
-and free-form entry), and the guided √2 demo — plus a one-line description of
-each. Keep it in the repo's no-build vanilla-HTML style, reusing the map's
-design tokens. Small.
+Resolved by the chat-first redesign: `/` is now the workspace entry page
+(theorem box + session list + links to the map at `/openconjectures` and the
+guided √2 demo). No separate landing page needed.
 
 ### W2. Export the whole proof as Lean
 

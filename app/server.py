@@ -175,7 +175,7 @@ else:
 
 # ---------------------------------------------------------------- pages
 
-@app.get("/")
+@app.get("/openconjectures")
 def map_page():
     for name in ("conjecture_map_local.html", "conjecture_map.html"):
         p = ROOT / name
@@ -184,12 +184,15 @@ def map_page():
     raise HTTPException(404, "no conjecture map html found — run scripts/05_render.py")
 
 
+@app.get("/")
 @app.get("/workspace")
 def workspace_page():
+    """The workspace is the home page; /workspace kept for existing links
+    (map 'prove this' buttons, bookmarks, the demo URL)."""
     p = ROOT / "app" / "static" / "workspace.html"
     if p.is_file():
         return FileResponse(p, media_type="text/html")
-    return PlainTextResponse("workspace page lands in step 3")
+    return PlainTextResponse("workspace page missing")
 
 
 app.mount("/vendor/katex", StaticFiles(directory=ROOT / "vendor" / "katex"),
