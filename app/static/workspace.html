@@ -27,7 +27,7 @@
   }
   * { box-sizing: border-box; margin: 0; }
   html, body { height: 100%; }
-  body { font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  body { font: 13.5px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
          background: var(--page); color: var(--ink-1); overflow: hidden; }
   a { color: var(--s1); }
   button { font: inherit; cursor: pointer; }
@@ -36,11 +36,11 @@
   button.mini:hover:not(:disabled) { color: var(--ink-1); border-color: var(--baseline); }
   button.mini:disabled { opacity: 0.4; cursor: default; }
   button.primary { color: #fff; background: var(--s1); border: 1px solid var(--s1);
-    border-radius: 6px; padding: 4px 12px; }
+    border-radius: 8px; padding: 6px 15px; font-weight: 600; }
   button.primary:disabled { opacity: 0.4; cursor: default; }
-  .cap { font-size: 11px; color: var(--ink-muted); text-transform: uppercase;
-    letter-spacing: 0.5px; margin-bottom: 6px; }
-  .badge { display: inline-block; font-size: 10.5px; font-weight: 650; padding: 1px 8px;
+  .cap { font-size: 10.5px; color: var(--ink-muted); text-transform: uppercase;
+    letter-spacing: 0.6px; }
+  .badge { display: inline-block; font-size: 10px; font-weight: 650; padding: 1px 8px;
     border-radius: 10px; border: 1px solid; text-transform: uppercase; letter-spacing: 0.4px; }
   .badge.verified          { color: var(--s2); border-color: var(--s2); }
   .badge.partially_verified{ color: var(--s3); border-color: var(--s3); }
@@ -49,192 +49,278 @@
   .badge.in_progress       { color: var(--s1); border-color: var(--s1); }
   .badge.proved            { color: #fff; background: var(--s2); border-color: var(--s2); }
   .badge.partial           { color: var(--s3); border-color: var(--s3); }
+  .badge.lbadge { font-family: ui-monospace, monospace; text-transform: none; }
+  .chip { display: inline-block; font-size: 10px; padding: 1px 7px; border-radius: 9px;
+    background: var(--grid); color: var(--ink-2); vertical-align: middle; }
+  .chip.theoremsearch { background: color-mix(in srgb, var(--s1) 12%, transparent); color: var(--s1); }
+  .chip.map { background: color-mix(in srgb, var(--s2) 12%, transparent); color: var(--s2); }
+  .chip.recalled { background: color-mix(in srgb, var(--s3) 14%, transparent); color: var(--s3); }
 
-  /* ------- app shell: header / main (steps | evidence) / footer ------- */
-  #app { display: none; height: 100vh; grid-template-rows: auto 1fr auto; }
-  #app.on { display: grid; }
-  #hdr { padding: 12px 18px 10px; border-bottom: 1px solid var(--border);
-    background: var(--surface-1); }
-  #hdr .row1 { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
-  #hdr h1 { font-size: 15px; font-weight: 650; }
-  #hdr .meta { color: var(--ink-muted); font-size: 12px; }
-  #hdr .thm { font-size: 13px; margin-top: 6px; border-left: 3px solid var(--baseline);
-    padding: 3px 0 3px 12px; white-space: pre-wrap; overflow-x: auto; }
-  #main { display: grid; grid-template-columns: minmax(0,1fr) 330px; min-height: 0; }
-  #flow { overflow-y: auto; padding: 14px 18px; }
-  #side { overflow-y: auto; padding: 14px 16px; border-left: 1px solid var(--border);
-    background: var(--surface-1); }
+  /* ------------------- shell: header / main(left|drawer) ------------------- */
+  #shell { display: none; grid-template-rows: auto 1fr; height: 100vh; }
+  #shell.on { display: grid; }
+  #hdr { display: flex; align-items: center; gap: 12px; padding: 10px 18px;
+    background: var(--surface-1); border-bottom: 1px solid var(--border); }
+  #hdr h1 { font-size: 14.5px; font-weight: 650; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #hdr .meta { color: var(--ink-muted); font-size: 12px; white-space: nowrap; }
+  #hdr .right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+  .maplink { font-size: 12px; color: var(--s1); text-decoration: none;
+    border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; }
+  .maplink:hover { border-color: var(--s1); }
+  #main { display: grid; grid-template-columns: minmax(0,1fr) 0; min-height: 0;
+    transition: grid-template-columns 0.15s ease; }
+  body.drawer-open #main { grid-template-columns: minmax(0,1fr) min(420px, 44vw); }
 
-  .step { border: 1px solid var(--border); border-radius: 10px; background: var(--surface-1);
-    padding: 10px 12px; margin-bottom: 10px; }
-  .step .top { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
-  .step .num { font-weight: 650; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
-  .step .kind { font-size: 10.5px; color: var(--s5); text-transform: uppercase; letter-spacing: 0.4px; }
-  .step .who { font-size: 11px; color: var(--ink-muted); margin-left: auto; }
-  .step .sact { font-size: 10.5px; padding: 1px 7px; opacity: 0; transition: opacity 0.12s; }
-  .step:hover .sact { opacity: 1; }
-  body.busy .sact { opacity: 0 !important; pointer-events: none; }
+  /* ------------------- left column ------------------- */
+  #left { display: grid; grid-template-rows: auto 1fr auto; min-height: 0; }
 
-  /* Lean layer */
-  .lbadge { font-family: ui-monospace, monospace; }
-  .ldrawer { margin-top: 7px; }
-  .ldrawer summary { font-size: 11.5px; color: var(--ink-muted); cursor: pointer; user-select: none; }
-  .ldrawer textarea { width: 100%; min-height: 90px; font: 11.5px/1.5 ui-monospace, monospace;
+  #thmCard { margin: 14px 18px 4px; background: var(--surface-1);
+    border: 1px solid var(--border); border-radius: 12px; padding: 12px 16px; }
+  #thmView .top { display: flex; align-items: baseline; gap: 10px; }
+  #thmView .edit { margin-left: auto; }
+  #thmView .stmt { font-size: 15px; margin-top: 5px; overflow-x: auto; }
+  #discLine { margin-top: 8px; font-size: 12px; color: var(--ink-muted); cursor: pointer; }
+  #discLine b { color: var(--ink-2); font-weight: 600; }
+  #thmEditBox { display: none; }
+  #thmEditBox textarea, #homeStmt { width: 100%; min-height: 64px; font: inherit;
     color: var(--ink-1); background: var(--page); border: 1px solid var(--border);
-    border-radius: 8px; padding: 7px 9px; resize: vertical; outline: none; margin-top: 6px; }
-  .ldrawer .lrow { display: flex; gap: 8px; margin-top: 6px; align-items: center; }
-  .ldrawer .ldiag { font: 11px/1.5 ui-monospace, monospace; color: var(--s6);
-    background: var(--page); border-radius: 6px; padding: 6px 8px; margin-top: 6px;
-    white-space: pre-wrap; max-height: 140px; overflow-y: auto; }
-  .ldrawer .lmsg { font-size: 11.5px; color: var(--ink-muted); }
-  #hdr .asm { margin-left: 6px; }
-  .step .stmt { margin: 6px 0 2px; overflow-x: auto; }
-  .step .just { color: var(--ink-2); font-size: 12px; }
-  .step details { margin-top: 6px; }
-  .step summary { font-size: 11.5px; color: var(--ink-muted); cursor: pointer; user-select: none; }
-  .step .comment { font-size: 12.5px; margin-top: 4px; border-left: 3px solid var(--grid);
-    padding-left: 10px; white-space: pre-wrap; }
+    border-radius: 8px; padding: 9px 11px; resize: vertical; outline: none; }
+  #thmEditBox textarea:focus, #homeStmt:focus, #chatText:focus { border-color: var(--s1); }
+  #thmEditBox .row { display: flex; gap: 8px; margin-top: 8px; }
+  body.editing #thmView { display: none; }
+  body.editing #thmEditBox { display: block; }
 
-  #convo { margin-top: 18px; }
-  .bubble { border-radius: 10px; padding: 8px 12px; margin: 8px 0; max-width: 92%;
-    white-space: pre-wrap; overflow-x: auto; }
+  #chat { overflow-y: auto; padding: 8px 18px 6px; }
+  .bubble { border-radius: 12px; padding: 9px 13px; margin: 9px 0; max-width: 88%;
+    overflow-x: auto; }
+  .bubble .who { font-size: 10px; color: var(--ink-muted); text-transform: uppercase;
+    letter-spacing: 0.4px; margin-bottom: 3px; }
   .bubble.user { background: var(--grid); margin-left: auto; }
   .bubble.agent { background: var(--surface-1); border: 1px solid var(--border); }
-  .bubble .who { font-size: 10.5px; color: var(--ink-muted); text-transform: uppercase;
-    letter-spacing: 0.4px; margin-bottom: 3px; }
+  .bubble .txt { white-space: pre-wrap; }
   #live .cursor { display: inline-block; width: 7px; height: 13px; background: var(--s1);
     vertical-align: text-bottom; animation: blink 1s steps(1) infinite; }
   @keyframes blink { 50% { opacity: 0; } }
   #ticker { font-size: 11.5px; color: var(--ink-muted); font-family: ui-monospace, monospace;
     margin: 4px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
-  .cx { border: 1px solid var(--s5); border-left-width: 4px; border-radius: 8px;
-    padding: 9px 11px; margin-bottom: 10px; }
-  .cx .kind { font-size: 10.5px; color: var(--s5); font-weight: 650;
-    text-transform: uppercase; letter-spacing: 0.5px; }
-  .cx .desc { margin: 5px 0; overflow-x: auto; }
-  .cx .note { font-size: 12px; color: var(--ink-2); }
-  .ev { border-bottom: 1px solid var(--grid); padding: 8px 2px; font-size: 12px; }
-  .ev .k { color: var(--ink-muted); font-size: 11px; }
-  .ev .out { font-family: ui-monospace, monospace; font-size: 11px; color: var(--ink-2);
-    background: var(--page); border-radius: 6px; padding: 5px 7px; margin-top: 4px;
-    white-space: pre-wrap; overflow-x: auto; max-height: 90px; overflow-y: auto; }
+  .notice { color: var(--s6); font-size: 12px; margin: 6px 0; }
 
   #coach { display: none; border: 1px solid var(--s3); border-left-width: 4px;
-    border-radius: 10px; padding: 10px 13px; margin-bottom: 10px; background: var(--surface-1); }
+    border-radius: 10px; padding: 10px 13px; margin: 0 18px 8px; background: var(--surface-1); }
   #coach.on { display: block; }
   #coach .cap { color: var(--s3); margin-bottom: 4px; }
   #coach .after { color: var(--ink-2); font-size: 12.5px; border-bottom: 1px dashed var(--grid);
     padding-bottom: 8px; margin-bottom: 8px; }
-  #coach .txt { font-size: 13px; }
   #coach .row { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
   #coach .skip { margin-left: auto; font-size: 11.5px; color: var(--ink-muted);
     background: none; border: none; }
   #coach .skip:hover { color: var(--ink-1); }
 
-  #ftr { border-top: 1px solid var(--border); background: var(--surface-1); padding: 10px 18px; }
-  #ftr textarea { width: 100%; font: inherit; color: var(--ink-1); background: var(--page);
-    border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; resize: vertical;
-    min-height: 44px; outline: none; }
-  #ftr textarea:focus, #ftr input:focus { border-color: var(--s1); }
-  #ftr .row { display: flex; gap: 8px; margin-top: 8px; align-items: center; flex-wrap: wrap; }
-  #just { flex: 1; min-width: 180px; font: inherit; color: var(--ink-1); background: var(--page);
-    border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; outline: none; }
-  #busy { font-size: 12px; color: var(--s1); margin-left: auto; display: none; }
-  #busy.on { display: flex; align-items: center; gap: 8px; }
+  #inputBar { padding: 9px 18px 13px; background: var(--surface-1);
+    border-top: 1px solid var(--border); }
+  #chips { display: flex; gap: 6px; margin-bottom: 8px; align-items: center; }
+  #chips .mini { font-size: 11.5px; padding: 2px 10px; border-radius: 12px; }
+  #busy { font-size: 12px; color: var(--s1); margin-left: auto; display: none;
+    align-items: center; gap: 8px; }
+  #busy.on { display: flex; }
+  #inputRow { display: flex; gap: 10px; align-items: flex-end; }
+  #chatText { flex: 1; font: inherit; color: var(--ink-1); background: var(--page);
+    border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px;
+    min-height: 44px; resize: vertical; outline: none; }
 
-  /* --------------------------- home view --------------------------- */
-  #home { display: none; height: 100vh; overflow-y: auto; }
-  #home.on { display: block; }
-  #home .wrap { max-width: 720px; margin: 0 auto; padding: 40px 20px; }
-  #home h1 { font-size: 19px; font-weight: 650; margin-bottom: 4px; }
-  #home .sub { color: var(--ink-muted); margin-bottom: 26px; }
+  /* ------------------- drawer ------------------- */
+  #drawer { border-left: 1px solid var(--border); background: var(--surface-1);
+    min-width: 0; overflow: hidden; display: none; flex-direction: column; }
+  body.drawer-open #drawer { display: flex; }
+  #tabs { display: flex; gap: 2px; padding: 8px 14px 0; border-bottom: 1px solid var(--border);
+    flex: none; }
+  #tabs button { border: none; background: none; padding: 7px 13px; font-size: 12.5px;
+    color: var(--ink-muted); border-bottom: 2px solid transparent; }
+  #tabs button.on { color: var(--ink-1); font-weight: 600; border-bottom-color: var(--s1); }
+  .tabBody { overflow-y: auto; padding: 12px 16px; display: none; min-height: 0; }
+  body[data-tab="context"] #tabContext { display: block; }
+  body[data-tab="proof"] #tabProof { display: block; }
+  .sect { margin-bottom: 18px; }
+  .sect > .cap { margin-bottom: 4px; }
+  .dItem { padding: 9px 0; border-bottom: 1px solid var(--grid); }
+  .dItem .t { font-weight: 600; font-size: 12.5px; display: flex; gap: 6px;
+    align-items: baseline; flex-wrap: wrap; }
+  .dItem .x { font-size: 12px; color: var(--ink-2); margin-top: 3px; }
+  .dEmpty { color: var(--ink-muted); font-size: 12.5px; padding: 6px 0; }
+
+  .pRow { display: flex; gap: 8px; padding: 7px 0; border-bottom: 1px solid var(--grid);
+    align-items: baseline; font-size: 12.5px; }
+  .pRow .n { color: var(--ink-muted); font-variant-numeric: tabular-nums; width: 18px; flex: none; }
+  .pRow .s { flex: 1; min-width: 0; overflow-x: auto; }
+  .pRow .s .just { color: var(--ink-muted); }
+  .pRow .badge { flex: none; }
+  #proofSummary { display: flex; gap: 8px; align-items: center; margin: 4px 0 8px; flex-wrap: wrap;
+    font-size: 11.5px; color: var(--ink-muted); }
+  .cx { border: 1px solid var(--s5); border-left-width: 4px; border-radius: 8px;
+    padding: 9px 11px; margin: 10px 0; }
+  .cx .kind { font-size: 10.5px; color: var(--s5); font-weight: 650;
+    text-transform: uppercase; letter-spacing: 0.5px; }
+  .cx .desc { margin: 5px 0; overflow-x: auto; }
+  .cx .note { font-size: 12px; color: var(--ink-2); }
+  .ev { border-bottom: 1px solid var(--grid); padding: 8px 0; font-size: 12px; }
+  .ev .k { color: var(--ink-muted); font-size: 11px; }
+  .ev .out { font-family: ui-monospace, monospace; font-size: 11px; color: var(--ink-2);
+    background: var(--page); border-radius: 6px; padding: 5px 7px; margin-top: 4px;
+    white-space: pre-wrap; overflow-x: auto; max-height: 90px; overflow-y: auto; }
+  #leanBox { margin-top: 16px; border: 1px solid var(--border); border-radius: 10px;
+    padding: 11px 13px; }
+  #leanBox .x { font-size: 12px; color: var(--ink-2); margin-top: 4px; }
+  #leanBox .row { display: flex; gap: 8px; align-items: center; margin-top: 9px; flex-wrap: wrap; }
+  #leanBox pre { font: 11px/1.5 ui-monospace, monospace; background: var(--page);
+    border-radius: 8px; padding: 8px 10px; margin-top: 8px; overflow: auto;
+    color: var(--ink-2); max-height: 220px; }
+
+  /* ------------------- home (entry page) ------------------- */
+  #home { display: none; height: 100vh; grid-template-rows: auto 1fr; }
+  #home.on { display: grid; }
+  #home .body { overflow-y: auto; }
+  #home .wrap { max-width: 780px; margin: 0 auto; padding: 34px 20px; }
   #home .card { background: var(--surface-1); border: 1px solid var(--border);
-    border-radius: 12px; padding: 16px 18px; margin-bottom: 20px; }
-  #home input[type=text], #home textarea { width: 100%; font: inherit; color: var(--ink-1);
-    background: var(--page); border: 1px solid var(--border); border-radius: 8px;
-    padding: 8px 10px; outline: none; margin-bottom: 8px; }
-  #home textarea { min-height: 70px; resize: vertical; }
+    border-radius: 12px; padding: 14px 18px; margin-bottom: 22px; }
+  #home .hint { color: var(--ink-muted); font-size: 12px; }
+  #home .row { display: flex; gap: 12px; margin-top: 10px; align-items: center; }
   .srow { display: flex; gap: 10px; align-items: baseline; padding: 9px 6px;
     border-bottom: 1px solid var(--grid); cursor: pointer; border-radius: 6px; }
   .srow:hover { background: var(--grid); }
-  .srow .t { flex: 1; }
-  .srow .m { color: var(--ink-muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+  .srow .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; }
+  .srow .m { color: var(--ink-muted); font-size: 11.5px; font-variant-numeric: tabular-nums;
+    white-space: nowrap; }
   .srow .del { border: none; background: none; color: var(--ink-muted); font-size: 14px; }
   .srow .del:hover { color: var(--s6); }
-  #err { color: var(--s6); font-size: 12px; margin-top: 8px; white-space: pre-wrap; }
+  #homeErr { color: var(--s6); font-size: 12px; margin-top: 8px; white-space: pre-wrap; }
 </style>
 </head>
-<body>
+<body data-tab="context">
 
+<!-- ------------------------- home: the entry page ------------------------- -->
 <div id="home">
-  <div class="wrap">
-    <h1>Proof Workspace</h1>
-    <div class="sub">develop a proof step by step, with an agent checking your work —
-      pick a conjecture from the <a href="/">map</a>, or take the
-      <a href="/workspace?demo=sqrt2">guided tour (√2 is irrational)</a></div>
+  <div id="hdrHome" style="display:flex;align-items:center;gap:12px;padding:10px 18px;background:var(--surface-1);border-bottom:1px solid var(--border)">
+    <h1 style="font-size:14.5px;font-weight:650">Proof Workspace</h1>
+    <span class="meta" style="color:var(--ink-muted);font-size:12px">prove theorems with an agent checking your work</span>
+    <span style="margin-left:auto;display:flex;gap:8px">
+      <a class="maplink" href="/" target="_blank" rel="noopener">◉ conjecture map</a>
+      <a class="maplink" href="/workspace?demo=sqrt2">guided tour: √2</a>
+    </span>
+  </div>
+  <div class="body"><div class="wrap">
     <div class="card">
-      <div class="cap">new theorem / conjecture</div>
-      <input type="text" id="newTitle" placeholder="Title (e.g. √2 is irrational)">
-      <textarea id="newTex" placeholder="Statement — LaTeX welcome, use $…$ around math (e.g. $\sqrt2\notin\mathbb{Q}$)"></textarea>
-      <button class="primary" id="newBtn">start proving</button>
-      <div id="err"></div>
+      <div class="cap">theorem / conjecture to prove</div>
+      <textarea id="homeStmt" style="margin-top:6px"
+        placeholder="State it precisely — LaTeX welcome, $…$ around math.&#10;e.g.  Prove that $\sqrt{2} \notin \mathbb{Q}$."></textarea>
+      <div class="row">
+        <button class="primary" id="homeSubmit">submit</button>
+        <span class="hint">on submit the agent pins down the statement, finds relevant results, and extracts definitions</span>
+      </div>
+      <div id="homeErr"></div>
     </div>
     <div class="card">
       <div class="cap">sessions</div>
-      <div id="sessList"><div class="m" style="color:var(--ink-muted)">loading…</div></div>
+      <div id="sessList" style="margin-top:4px"><div class="dEmpty">loading…</div></div>
     </div>
-  </div>
+  </div></div>
 </div>
 
-<div id="app">
+<!-- ------------------------- session view ------------------------- -->
+<div id="shell">
   <div id="hdr">
-    <div class="row1">
-      <a href="/workspace" title="all sessions">←</a>
-      <h1 id="hTitle"></h1>
-      <span class="badge" id="hStatus"></span>
-      <span id="hAsm" class="asm"></span>
-      <span class="meta" id="hMeta"></span>
-    </div>
-    <div class="thm" id="hThm"></div>
+    <a href="/workspace" title="all sessions" style="text-decoration:none">←</a>
+    <h1 id="hTitle"></h1>
+    <span class="badge" id="hStatus"></span>
+    <span class="meta" id="hMeta"></span>
+    <span class="right">
+      <a class="maplink" href="/" target="_blank" rel="noopener">◉ conjecture map</a>
+      <button class="mini" id="drawerBtn">◧ context &amp; proof</button>
+    </span>
   </div>
+
   <div id="main">
-    <div id="flow">
-      <div class="cap">proof steps</div>
-      <div id="steps"></div>
-      <div id="convo">
-        <div class="cap">conversation</div>
-        <div id="chat"></div>
-        <div id="ticker"></div>
-        <div id="live"></div>
+    <div id="left">
+      <div id="thmCard">
+        <div id="thmView">
+          <div class="top">
+            <span class="cap">proving</span>
+            <span class="badge" id="thmStatus"></span>
+            <button class="mini edit" id="thmEditBtn">✎ edit</button>
+          </div>
+          <div class="stmt" id="thmStmt"></div>
+          <div id="discLine" title="open the context drawer"></div>
+        </div>
+        <div id="thmEditBox">
+          <div class="cap" style="margin-bottom:6px">edit the statement — context will be re-discovered</div>
+          <textarea id="thmEditText"></textarea>
+          <div class="row">
+            <button class="primary" id="thmSaveBtn">resubmit</button>
+            <button class="mini" id="thmCancelBtn">cancel</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="chat"></div>
+
+      <div id="coach">
+        <div class="cap">guided walkthrough <span id="coachN"></span></div>
+        <div class="after" id="coachAfter" style="display:none"></div>
+        <div id="coachTxt"></div>
+        <div class="row">
+          <button class="mini" id="coachUse" style="display:none">use this step</button>
+          <button class="skip" id="coachSkip">skip ›</button>
+        </div>
+      </div>
+
+      <div id="inputBar">
+        <div id="chips">
+          <button class="mini act" data-act="hint">hint</button>
+          <button class="mini act" data-act="suggest_next">suggest next</button>
+          <button class="mini act" data-act="prove_remaining">prove remaining</button>
+          <button class="mini act" data-act="challenge">challenge</button>
+          <span id="busy">agent working… <button class="mini" id="intBtn">interrupt</button></span>
+        </div>
+        <div id="inputRow">
+          <textarea id="chatText"
+            placeholder="Write a proof step, ask a question, or narrate — LaTeX welcome ($…$).  ⌘⏎ to send"></textarea>
+          <button class="primary" id="sendBtn">send</button>
+        </div>
       </div>
     </div>
-    <div id="side">
-      <div id="cxBox"></div>
-      <div class="cap">evidence log</div>
-      <div id="evList"></div>
-    </div>
-  </div>
-  <div id="ftr">
-    <div id="coach">
-      <div class="cap">guided walkthrough <span id="coachN"></span></div>
-      <div class="after" id="coachAfter" style="display:none"></div>
-      <div class="txt" id="coachTxt"></div>
-      <div class="row">
-        <button class="mini" id="coachUse" style="display:none">use this step</button>
-        <button class="skip" id="coachSkip">skip ›</button>
+
+    <div id="drawer">
+      <div id="tabs">
+        <button id="tabBtnContext" class="on">Context</button>
+        <button id="tabBtnProof">Proof</button>
       </div>
-    </div>
-    <textarea id="stmt" placeholder="Next proof step — LaTeX welcome ($…$ around math). ⌘⏎ to submit"></textarea>
-    <div class="row">
-      <input type="text" id="just" placeholder="justification (optional)">
-      <button class="primary" id="submitBtn">submit step</button>
-      <button class="mini act" data-act="hint">hint</button>
-      <button class="mini act" data-act="suggest_next">suggest next</button>
-      <button class="mini act" data-act="prove_remaining">prove remaining</button>
-      <button class="mini act" data-act="challenge">challenge</button>
-      <button class="mini act" data-act="chat">ask</button>
-      <span id="busy">agent working… <button class="mini" id="intBtn">interrupt</button></span>
+      <div class="tabBody" id="tabContext">
+        <div class="sect">
+          <div class="cap">relevant results — discovered for this theorem</div>
+          <div id="discList"></div>
+        </div>
+        <div class="sect">
+          <div class="cap">objects &amp; definitions — extracted from the statement</div>
+          <div id="defList"></div>
+        </div>
+      </div>
+      <div class="tabBody" id="tabProof">
+        <div class="cap">condensed proof</div>
+        <div id="proofSummary"></div>
+        <div id="stepRows"></div>
+        <div id="cxBox"></div>
+        <div class="sect" style="margin-top:14px">
+          <div class="cap">evidence</div>
+          <div id="evList"></div>
+        </div>
+        <div id="leanBox" style="display:none">
+          <div class="cap">lean formalization</div>
+          <div class="x" id="leanBlurb"></div>
+          <div class="row" id="leanRow"></div>
+          <pre id="leanCode" style="display:none"></pre>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -248,7 +334,7 @@ const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"']/g,
   c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 
-const DELIMS = [                       /* same list as the map */
+const DELIMS = [
   {left: "$$", right: "$$", display: true},
   {left: "\\[", right: "\\]", display: true},
   {left: "\\begin{equation}", right: "\\end{equation}", display: true},
@@ -259,8 +345,6 @@ const DELIMS = [                       /* same list as the map */
   {left: "\\(", right: "\\)", display: false},
 ];
 
-/* English-sentence detector: keeps prose (agent commentary, chat) from being
-   force-rendered as one big formula just because it contains _ or =. */
 function looksProse(s){
   if (/[.!?]\s/.test(s)) return true;
   const bareWords = s.split(/\s+/).filter(w => /^[A-Za-z,;:()'"”“-]{2,}$/.test(w));
@@ -273,14 +357,26 @@ function tex(el, s){
   el.textContent = s;
   if (!window.katex) return;
   const hasDelim = /\$|\\\(|\\\[/.test(s);
-  if (!hasDelim && !looksProse(s) && /[\\^_{}]|=/.test(s) && s.length < 400){
+  /* bare-formula attempt: a LaTeX command anywhere, or math-ish chars in a
+     non-prose string; katex failure falls back to plain text */
+  const hasCmd = /\\[a-zA-Z]{2,}/.test(s);
+  if (!hasDelim && (hasCmd || (!looksProse(s) && /[\\^_{}]|=/.test(s))) && s.length < 500){
     try { katex.render(s, el, {throwOnError: true}); return; }
-    catch (e) { el.textContent = s; }   /* not pure LaTeX — leave as text */
+    catch (e) { el.textContent = s; }
   }
   try {
     renderMathInElement(el, {throwOnError: false, errorColor: "var(--s6)",
                              delimiters: DELIMS});
-  } catch (e) { /* keep plain text */ }
+  } catch (e) {}
+}
+
+/* Prose with $math$ and **bold**. */
+function proseHtml(el, s){
+  el.innerHTML = esc(s).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
+  try {
+    renderMathInElement(el, {throwOnError: false, errorColor: "var(--s6)",
+                             delimiters: DELIMS});
+  } catch (e) {}
 }
 
 async function api(path, opts){
@@ -297,37 +393,22 @@ async function api(path, opts){
 }
 
 /* --------------------------------------------------------------- state */
-let S = null;            /* current session json (server is authoritative) */
-let ES = null;           /* EventSource */
-let live = null;         /* {turn_id, text} while agent prose streams */
+let S = null;              /* session json (server is authoritative) */
+let ES = null;             /* EventSource */
+let live = null;           /* streaming agent prose */
 let busy = false;
-let DEMO = null;         /* guided-walkthrough script (app/demos/*.json) */
-let coachCursor = 0;     /* index into DEMO.steps */
-let LEAN = {available: false};   /* /api/lean/status, fetched once */
-const leanOpen = new Set();      /* step ids with the lean drawer open */
-const leanDraft = {};            /* step id -> unsaved textarea content */
-
-/* Lean badge: word + css class for a step/assembly lean record */
-function leanBadge(rec){
-  if (!rec) return null;
-  if (rec.check === "ok")
-    return rec.faithful !== "unreviewed"
-      ? {word: "λ machine-checked", cls: "verified"}
-      : {word: "λ compiles · unreviewed", cls: "partially_verified"};
-  if (rec.check === "has_sorries")
-    return {word: `λ ${rec.sorries} sorr${rec.sorries === 1 ? "y" : "ies"}`,
-            cls: "partially_verified"};
-  return {word: "λ failed", cls: "refuted"};
-}
+let LEAN = {available: false};
+let DEMO = null;
+let coachCursor = 0;
+let drawerAutoOpened = false;   /* auto-open once when discovery lands */
 
 /* ---------------------------------------------------------------- home */
 async function renderHome(){
-  $("home").classList.add("on"); $("app").classList.remove("on");
+  $("home").classList.add("on"); $("shell").classList.remove("on");
   let list;
   try { list = await api("/sessions"); }
-  catch (e) { $("sessList").innerHTML = `<div id="err">${esc(e.message)}</div>`; return; }
-  $("sessList").innerHTML = list.length ? "" :
-    '<div style="color:var(--ink-muted)">none yet</div>';
+  catch (e) { $("sessList").innerHTML = `<div class="notice">${esc(e.message)}</div>`; return; }
+  $("sessList").innerHTML = list.length ? "" : '<div class="dEmpty">none yet</div>';
   for (const s of list){
     const row = document.createElement("div");
     row.className = "srow";
@@ -346,20 +427,23 @@ async function renderHome(){
   }
 }
 
-$("newBtn").onclick = async () => {
-  const title = $("newTitle").value.trim(), texStr = $("newTex").value.trim();
-  $("err").textContent = "";
-  if (!title && !texStr){ $("err").textContent = "give a title or a statement"; return; }
+$("homeSubmit").onclick = async () => {
+  const statement = $("homeStmt").value.trim();
+  $("homeErr").textContent = "";
+  if (!statement){ $("homeErr").textContent = "state the theorem first"; return; }
   try {
-    const s = await api("/sessions", {body: {title, tex: texStr}});
+    const s = await api("/sessions", {body: {statement}});
     location.search = "?session=" + s.id;
-  } catch (e) { $("err").textContent = e.message; }
+  } catch (e) { $("homeErr").textContent = e.message; }
 };
+$("homeStmt").addEventListener("keydown", e => {
+  if ((e.metaKey || e.ctrlKey) && e.key === "Enter") $("homeSubmit").click();
+});
 
 /* ------------------------------------------------------------- session */
 async function openSession(sid){
   S = await api("/sessions/" + sid);
-  $("home").classList.remove("on"); $("app").classList.add("on");
+  $("home").classList.remove("on"); $("shell").classList.add("on");
   setBusy(!!S.busy);
   if (S.mode === "guided" && S.demo){
     try {
@@ -367,6 +451,7 @@ async function openSession(sid){
       coachCursor = S.guided_cursor || 0;
     } catch (e) { DEMO = null; }
   }
+  if (S.discoveries.length || S.definitions.length) drawerAutoOpened = true;
   renderAll();
   connectEvents(sid);
 }
@@ -391,6 +476,13 @@ function connectEvents(sid){
   });
   ES.addEventListener("state_patch", e => {
     S = JSON.parse(e.data).session;
+    /* auto-open the drawer the first time discovery results land */
+    if (!drawerAutoOpened && (S.discoveries.length || S.definitions.length)){
+      drawerAutoOpened = true;
+      document.body.classList.add("drawer-open");
+      document.body.dataset.tab = "context";
+      syncTabButtons();
+    }
     renderAll();
   });
   ES.addEventListener("turn_done", () => {
@@ -398,12 +490,12 @@ function connectEvents(sid){
     setBusy(false); renderLive();
     maybeAdvanceCoach(); renderCoach();
   });
-  ES.addEventListener("error", e => {           /* server-sent error events */
+  ES.addEventListener("error", e => {
     if (e.data){
       const d = JSON.parse(e.data);
       live = null; renderLive();
       appendNotice("error: " + d.message);
-    }                                            /* else: transport hiccup; EventSource retries */
+    }
   });
 }
 
@@ -411,30 +503,262 @@ function setBusy(b){
   busy = b;
   document.body.classList.toggle("busy", b);
   $("busy").classList.toggle("on", b);
-  $("submitBtn").disabled = b;
-  document.querySelectorAll("#ftr .act").forEach(el => el.disabled = b);
+  $("sendBtn").disabled = b;
+  document.querySelectorAll("#chips .act").forEach(el => el.disabled = b);
 }
 
 function appendNotice(msg){
   const div = document.createElement("div");
-  div.className = "bubble agent";
-  div.innerHTML = `<div class="who" style="color:var(--s6)">system</div>${esc(msg)}`;
+  div.className = "notice";
+  div.textContent = msg;
   $("chat").appendChild(div);
-  scrollFlow();
+  scrollChat();
 }
 
-function scrollFlow(){ const f = $("flow"); f.scrollTop = f.scrollHeight; }
+function scrollChat(){ const c = $("chat"); c.scrollTop = c.scrollHeight; }
+
+/* ------------------------------------------------------------ rendering */
+function renderAll(){ maybeAdvanceCoach(); renderHeader(); renderTheorem();
+                      renderChat(); renderDrawer(); renderCoach(); }
+
+function renderHeader(){
+  $("hTitle").textContent = S.theorem.title;
+  const st = $("hStatus");
+  st.className = "badge " + S.status;
+  st.textContent = S.status.replace(/_/g, " ");
+  st.title = S.status_note || "";
+  const src = S.source.kind === "map_node" ? "from the conjecture map" : "user-entered";
+  const c = S.theorem.context;
+  $("hMeta").textContent = [src, c && c.cat, S.mode === "guided" ? "guided demo" : null]
+    .filter(Boolean).join(" · ");
+}
+
+function renderTheorem(){
+  const st = $("thmStatus");
+  st.className = "badge " + S.status;
+  st.textContent = S.status.replace(/_/g, " ");
+  tex($("thmStmt"), S.theorem.tex || S.theorem.text || "");
+  const nd = S.discoveries.length, nf = S.definitions.length;
+  $("discLine").innerHTML = (nd || nf)
+    ? `🔍 discovered <b>${nd} relevant result${nd === 1 ? "" : "s"}</b> and ` +
+      `<b>${nf} definition${nf === 1 ? "" : "s"}</b> — see the context drawer →`
+    : (busy ? "🔍 discovering relevant results and definitions…" : "");
+}
+
+$("thmEditBtn").onclick = () => {
+  if (busy){ appendNotice("wait for the current turn to finish before editing"); return; }
+  $("thmEditText").value = S.theorem.tex || S.theorem.text || "";
+  document.body.classList.add("editing");
+  $("thmEditText").focus();
+};
+$("thmCancelBtn").onclick = () => document.body.classList.remove("editing");
+$("thmSaveBtn").onclick = async () => {
+  const statement = $("thmEditText").value.trim();
+  if (!statement) return;
+  try {
+    await api(`/sessions/${S.id}/theorem`, {body: {statement}});
+    document.body.classList.remove("editing");
+    drawerAutoOpened = false;      /* re-open when fresh context lands */
+  } catch (e) { appendNotice(e.message); }
+};
+
+function renderChat(){
+  const box = $("chat");
+  box.innerHTML = "";
+  if (!S.chat.length && !live){
+    box.innerHTML = '<div class="dEmpty" style="text-align:center;margin-top:40px">' +
+      'Prove it yourself step by step, ask questions, or hand parts to the agent.</div>';
+  }
+  for (const m of S.chat){
+    const div = document.createElement("div");
+    div.className = "bubble " + (m.role === "user" ? "user" : "agent");
+    div.innerHTML = `<div class="who">${m.role === "user" ?
+      "you" + (m.action && m.action !== "chat" ? " · " + esc(m.action.replace(/_/g," ")) : "")
+      : "agent"}</div><div class="txt"></div>`;
+    if (m.role === "user") tex(div.querySelector(".txt"), m.text);
+    else proseHtml(div.querySelector(".txt"), m.text);
+    box.appendChild(div);
+  }
+  const t = document.createElement("div"); t.id = "ticker"; box.appendChild(t);
+  const l = document.createElement("div"); l.id = "live"; box.appendChild(l);
+  scrollChat();
+}
+
+function renderLive(){
+  const box = $("live");
+  if (!box) return;
+  if (!live || !live.text){ box.innerHTML = ""; return; }
+  box.innerHTML = `<div class="bubble agent"><div class="who">agent</div>` +
+    `<span class="txt"></span><span class="cursor"></span></div>`;
+  box.querySelector(".txt").textContent = live.text;
+  scrollChat();
+}
+
+/* ------------------------------------------------------------- drawer */
+$("drawerBtn").onclick = () => {
+  document.body.classList.toggle("drawer-open");
+  drawerAutoOpened = true;      /* user took control; stop auto-opening */
+};
+$("discLine").onclick = () => {
+  document.body.classList.add("drawer-open");
+  document.body.dataset.tab = "context";
+  syncTabButtons();
+};
+$("tabBtnContext").onclick = () => { document.body.dataset.tab = "context"; syncTabButtons(); };
+$("tabBtnProof").onclick = () => { document.body.dataset.tab = "proof"; syncTabButtons(); };
+function syncTabButtons(){
+  $("tabBtnContext").classList.toggle("on", document.body.dataset.tab === "context");
+  $("tabBtnProof").classList.toggle("on", document.body.dataset.tab === "proof");
+}
+
+function leanBadge(rec){
+  if (!rec) return null;
+  if (rec.check === "ok")
+    return rec.faithful !== "unreviewed"
+      ? {word: "λ machine-checked", cls: "verified"}
+      : {word: "λ compiles · unreviewed", cls: "partially_verified"};
+  if (rec.check === "has_sorries")
+    return {word: `λ ${rec.sorries} sorr${rec.sorries === 1 ? "y" : "ies"}`,
+            cls: "partially_verified"};
+  return {word: "λ failed", cls: "refuted"};
+}
+
+function renderDrawer(){
+  /* -- context tab -- */
+  const dl = $("discList");
+  dl.innerHTML = S.discoveries.length ? "" :
+    `<div class="dEmpty">${busy ? "discovering…" : "nothing recorded yet"}</div>`;
+  for (const d of S.discoveries){
+    const div = document.createElement("div");
+    div.className = "dItem";
+    div.innerHTML = `<div class="t"><span class="tt"></span>
+        <span class="chip ${esc(d.source)}">${esc(d.source === "theoremsearch" ? "TheoremSearch" : d.source)}</span></div>
+      ${d.tex ? '<div class="x xtex"></div>' : ""}<div class="x xx"></div>`;
+    tex(div.querySelector(".tt"), d.title);
+    if (d.tex) tex(div.querySelector(".xtex"), d.tex);
+    proseHtml(div.querySelector(".xx"), d.explanation);
+    dl.appendChild(div);
+  }
+  const fl = $("defList");
+  fl.innerHTML = S.definitions.length ? "" :
+    `<div class="dEmpty">${busy ? "extracting…" : "nothing recorded yet"}</div>`;
+  for (const d of S.definitions){
+    const div = document.createElement("div");
+    div.className = "dItem";
+    div.innerHTML = `<div class="t"><span class="tt"></span></div><div class="x xx"></div>`;
+    tex(div.querySelector(".tt"), d.term);
+    proseHtml(div.querySelector(".xx"), d.definition);
+    fl.appendChild(div);
+  }
+
+  /* -- proof tab -- */
+  const nSteps = S.steps.length;
+  const nVer = S.steps.filter(s => s.status === "verified").length;
+  $("proofSummary").innerHTML =
+    `<span class="badge ${esc(S.status)}">${esc(S.status.replace(/_/g," "))}</span>
+     <span>${nSteps} step${nSteps === 1 ? "" : "s"} · ${nVer} verified ·
+     evidence ×${S.evidence.length} · counterexamples ×${S.counterexamples.length}</span>`;
+  const rows = $("stepRows");
+  rows.innerHTML = nSteps ? "" : '<div class="dEmpty">no steps yet</div>';
+  for (const st of S.steps){
+    const div = document.createElement("div");
+    div.className = "pRow";
+    const grade = st.status.replace(/_/g, " ") +
+      (st.status === "verified" && st.lean && st.lean.check === "ok" ? " · λ" : "");
+    div.innerHTML = `<span class="n">${st.index}</span>
+      <span class="s"><span class="ss"></span>${st.justification ?
+        ` <span class="just">— </span>` : ""}</span>
+      <span class="badge ${esc(st.status)}" title="${esc(st.agent_comment || "")}">${esc(grade)}</span>`;
+    tex(div.querySelector(".ss"), st.statement_tex);
+    if (st.justification){
+      const span = document.createElement("span");
+      tex(span, st.justification);
+      div.querySelector(".just").appendChild(span);
+    }
+    rows.appendChild(div);
+  }
+
+  const DIAG = {
+    local_not_global: "local — breaks a proof step, not the conjecture",
+    global_and_local: "global + local — refutes the conjecture through a step",
+    global_not_local: "global — refutes the conjecture; a hidden lemma is missing",
+  };
+  const cx = $("cxBox");
+  cx.innerHTML = "";
+  for (const c of S.counterexamples){
+    const div = document.createElement("div");
+    div.className = "cx";
+    div.innerHTML = `<div class="kind">${esc(DIAG[c.diagnostic] || c.diagnostic)}</div>
+      <div class="desc"></div>
+      ${c.guilty_step_id ? `<div class="note">guilty step: ${esc(c.guilty_step_id)}</div>` : ""}
+      <div class="note">suggested repair: <b>${esc(c.suggested_repair.replace(/_/g," "))}</b></div>
+      ${c.repair_note ? `<div class="note rn"></div>` : ""}`;
+    tex(div.querySelector(".desc"), c.description_tex);
+    if (c.repair_note) proseHtml(div.querySelector(".rn"), c.repair_note);
+    cx.appendChild(div);
+  }
+
+  const ICON = {script: "⌨", computation: "∑", citation: "¶", counterexample: "✗",
+                lean: "λ", note: "·"};
+  const ev = $("evList");
+  ev.innerHTML = S.evidence.length ? "" : '<div class="dEmpty">empty</div>';
+  for (const e of [...S.evidence].reverse()){
+    const div = document.createElement("div");
+    div.className = "ev";
+    const link = e.script_path ?
+      ` · <a href="/api/sessions/${esc(S.id)}/files/${esc(e.script_path)}" target="_blank">${esc(e.script_path.split("/").pop())}</a>` : "";
+    div.innerHTML = `<div class="k">${ICON[e.kind] || "·"} ${esc(e.kind)} ·
+        <span class="badge ${esc(e.grade)}">${esc(e.grade.replace(/_/g," "))}</span>
+        ${e.step_id ? " · " + esc(e.step_id) : ""}${link}</div>
+      <div class="sum"></div>
+      ${e.output_excerpt ? `<div class="out">${esc(e.output_excerpt)}</div>` : ""}`;
+    tex(div.querySelector(".sum"), e.summary);
+    ev.appendChild(div);
+  }
+
+  /* -- lean box -- */
+  const lb = $("leanBox");
+  if (!LEAN.available){ lb.style.display = "none"; return; }
+  lb.style.display = "";
+  const rec = S.lean_assembly;
+  $("leanBlurb").textContent = rec
+    ? "The assembled proof file for the whole theorem."
+    : `Generate machine-checked Lean 4 for the theorem from the proof so far (Mathlib ${LEAN.mathlib_rev || ""}).`;
+  const row = $("leanRow");
+  row.innerHTML = "";
+  const gen = document.createElement("button");
+  gen.className = rec ? "mini" : "primary";
+  gen.textContent = rec ? "λ re-generate" : "λ generate lean";
+  gen.title = "the agent formalizes the verified steps and assembles the final theorem";
+  gen.onclick = () => { if (!busy)
+    api(`/sessions/${S.id}/actions`, {body: {type: "assemble_lean"}})
+      .catch(e => appendNotice(e.message)); };
+  row.appendChild(gen);
+  if (rec){
+    const b = leanBadge(rec);
+    const badge = document.createElement("a");
+    badge.className = "badge lbadge " + b.cls;
+    badge.textContent = b.word;
+    badge.style.textDecoration = "none";
+    badge.href = `/api/sessions/${S.id}/files/workspace/lean/assembly.lean`;
+    badge.target = "_blank";
+    badge.title = "view the assembled Lean file";
+    row.appendChild(badge);
+    if (rec.check === "ok" && rec.faithful === "unreviewed"){
+      const aff = document.createElement("button");
+      aff.className = "mini"; aff.textContent = "affirm faithful";
+      aff.onclick = () => api(`/sessions/${S.id}/lean/affirm`, {body: {assembly: true}})
+        .catch(e => appendNotice(e.message));
+      row.appendChild(aff);
+    }
+    $("leanCode").style.display = "";
+    $("leanCode").textContent = rec.code;
+  } else {
+    $("leanCode").style.display = "none";
+  }
+}
 
 /* ---------------------------------------------------------- guided mode */
-/* Coach text supports $math$ plus **bold**. */
-function proseHtml(el, s){
-  el.innerHTML = esc(s).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
-  try {
-    renderMathInElement(el, {throwOnError: false, errorColor: "var(--s6)",
-                             delimiters: DELIMS});
-  } catch (e) {}
-}
-
 function maybeAdvanceCoach(){
   if (!DEMO || busy) return;
   const human = S.steps.filter(s => s.author === "human");
@@ -467,9 +791,9 @@ function renderCoach(){
 $("coachUse").onclick = () => {
   const e = DEMO && DEMO.steps[coachCursor];
   if (!e || !e.suggested) return;
-  $("stmt").value = e.suggested.statement;
-  $("just").value = e.suggested.justification || "";
-  $("stmt").focus();
+  $("chatText").value = e.suggested.statement +
+    (e.suggested.justification ? `  (justification: ${e.suggested.justification})` : "");
+  $("chatText").focus();
 };
 $("coachSkip").onclick = () => {
   coachCursor++;
@@ -477,245 +801,24 @@ $("coachSkip").onclick = () => {
   renderCoach();
 };
 
-/* ------------------------------------------------------------ rendering */
-function renderAll(){ maybeAdvanceCoach(); renderHeader(); renderSteps();
-                      renderChat(); renderSide(); renderCoach(); }
-
-function renderHeader(){
-  $("hTitle").textContent = S.theorem.title;
-  const st = $("hStatus");
-  st.className = "badge " + S.status;
-  st.textContent = S.status.replace(/_/g, " ");
-  st.title = S.status_note || "";
-  const src = S.source.kind === "map_node" ? "from the conjecture map" : "user-entered";
-  const c = S.theorem.context;
-  $("hMeta").textContent = [src, c && c.cat, S.mode === "guided" ? "guided demo" : null]
-    .filter(Boolean).join(" · ");
-  tex($("hThm"), S.theorem.tex || S.theorem.text || "");
-  /* Lean assembly: badge + assemble/affirm controls */
-  const asm = $("hAsm");
-  asm.innerHTML = "";
-  if (LEAN.available){
-    const rec = S.lean_assembly;
-    const anyOk = S.steps.some(s => s.lean && s.lean.check === "ok");
-    if (rec){
-      const lb = leanBadge(rec);
-      asm.innerHTML = `<a class="badge lbadge ${lb.cls}" target="_blank"
-        title="view the assembled Lean file"
-        href="/api/sessions/${esc(S.id)}/files/workspace/lean/assembly.lean"
-        style="text-decoration:none">${esc(lb.word.replace("λ", "λ proof"))}</a>`;
-      if (rec.check === "ok" && rec.faithful === "unreviewed"){
-        const b = document.createElement("button");
-        b.className = "mini"; b.textContent = "affirm faithful";
-        b.onclick = () => api(`/sessions/${S.id}/lean/affirm`,
-                              {body: {assembly: true}}).catch(e => appendNotice(e.message));
-        asm.appendChild(b);
-      }
-    }
-    if (anyOk){
-      const b = document.createElement("button");
-      b.className = "mini"; b.textContent = rec ? "re-assemble" : "assemble lean proof";
-      b.title = "have the agent chain the formalized step lemmas into the final theorem";
-      b.onclick = () => { if (!busy) api(`/sessions/${S.id}/actions`,
-        {body: {type: "assemble_lean"}}).catch(e => appendNotice(e.message)); };
-      asm.appendChild(b);
-    }
-  }
-}
-
-function renderSteps(){
-  const box = $("steps");
-  box.innerHTML = S.steps.length ? "" :
-    '<div style="color:var(--ink-muted);margin-bottom:10px">no steps yet — enter the first one below</div>';
-  for (const st of S.steps){
-    const lb = LEAN.available ? leanBadge(st.lean) : null;
-    const div = document.createElement("div");
-    div.className = "step";
-    div.innerHTML = `
-      <div class="top">
-        <span class="num">${st.index}</span>
-        ${st.kind !== "step" ? `<span class="kind">${esc(st.kind)}</span>` : ""}
-        <span class="badge ${esc(st.status)}">${esc(st.status.replace(/_/g," "))}</span>
-        ${lb ? `<span class="badge lbadge ${lb.cls}" title="Lean formalization status">${esc(lb.word)}</span>` : ""}
-        <span class="who">${st.author === "human" ? "you" : "agent"}</span>
-        <button class="mini sact" data-act="check_step" data-step="${esc(st.id)}"
-          title="ask the agent to (re)check this step">check</button>
-        <button class="mini sact" data-act="prove_subgoal" data-step="${esc(st.id)}"
-          title="hand this subgoal to the agent to close">delegate</button>
-      </div>
-      <div class="stmt"></div>
-      ${st.justification ? `<div class="just jr-j">— </div>` : ""}
-      ${st.discovery_rationale ? `<div class="just jr-r" title="discovery rationale">✦ </div>` : ""}
-      ${st.agent_comment ? `<details ${st.status === "verified" ? "" : "open"}>
-        <summary>agent commentary</summary><div class="comment"></div></details>` : ""}
-      ${LEAN.available ? `<details class="ldrawer" ${leanOpen.has(st.id) ? "open" : ""}>
-        <summary>lean${st.lean ? " · " + esc(st.lean.check) : ""}</summary>
-        <textarea class="lcode" spellcheck="false"
-          placeholder="import Mathlib   —   theorem ${esc(st.id)} : … := by …"></textarea>
-        <div class="lrow">
-          <button class="mini lcheck">check</button>
-          <button class="mini lform">formalize (agent)</button>
-          <button class="mini laffirm" style="display:none">affirm faithful</button>
-          <span class="lmsg"></span>
-        </div>
-        <pre class="ldiag" style="display:none"></pre>
-      </details>` : ""}`;
-    tex(div.querySelector(".stmt"), st.statement_tex);
-    if (st.agent_comment) proseHtml(div.querySelector(".comment"), st.agent_comment);
-    if (st.justification){
-      const el = div.querySelector(".jr-j"), span = document.createElement("span");
-      tex(span, st.justification); el.appendChild(span);
-    }
-    if (st.discovery_rationale){
-      const el = div.querySelector(".jr-r"), span = document.createElement("span");
-      tex(span, st.discovery_rationale); el.appendChild(span);
-    }
-    div.querySelectorAll(".sact").forEach(btn => btn.onclick = async () => {
-      if (busy) return;
-      try { await api(`/sessions/${S.id}/actions`,
-                      {body: {type: btn.dataset.act, step_id: btn.dataset.step}}); }
-      catch (e) { appendNotice(e.message); }
-    });
-    if (LEAN.available) wireLeanDrawer(div, st);
-    box.appendChild(div);
-  }
-}
-
-/* Lean drawer wiring: drafts survive re-renders; check is a direct
-   compiler round-trip, formalize delegates to the agent. */
-function wireLeanDrawer(div, st){
-  const drawer = div.querySelector(".ldrawer");
-  const ta = drawer.querySelector(".lcode");
-  ta.value = leanDraft[st.id] ?? (st.lean ? st.lean.code : "");
-  ta.oninput = () => { leanDraft[st.id] = ta.value; };
-  drawer.ontoggle = () => {
-    if (drawer.open) leanOpen.add(st.id); else leanOpen.delete(st.id);
-  };
-  const msg = drawer.querySelector(".lmsg");
-  const diag = drawer.querySelector(".ldiag");
-  if (st.lean && st.lean.errors && st.lean.errors.length){
-    diag.style.display = "";
-    diag.textContent = st.lean.errors.map(e =>
-      `${e.severity} L${e.line}:${e.col}: ${e.message}`).join("\n");
-  }
-  const affirm = drawer.querySelector(".laffirm");
-  if (st.lean && st.lean.check === "ok" && st.lean.faithful === "unreviewed")
-    affirm.style.display = "";
-  affirm.onclick = async () => {
-    try { await api(`/sessions/${S.id}/lean/affirm`, {body: {step_id: st.id}}); }
-    catch (e) { msg.textContent = e.message; }
-  };
-  drawer.querySelector(".lcheck").onclick = async () => {
-    if (busy) return;
-    const code = ta.value.trim();
-    if (!code){ msg.textContent = "write some Lean first"; return; }
-    msg.textContent = "compiling… (~30s+, Mathlib import)";
-    try {
-      delete leanDraft[st.id];
-      await api(`/sessions/${S.id}/lean/check`, {body: {step_id: st.id, code}});
-      msg.textContent = "";
-    } catch (e) { msg.textContent = e.message; }
-  };
-  drawer.querySelector(".lform").onclick = async () => {
-    if (busy) return;
-    try { await api(`/sessions/${S.id}/actions`,
-                    {body: {type: "formalize_step", step_id: st.id}}); }
-    catch (e) { msg.textContent = e.message; }
-  };
-}
-
-function renderChat(){
-  const box = $("chat");
-  box.innerHTML = "";
-  for (const m of S.chat){
-    const div = document.createElement("div");
-    div.className = "bubble " + (m.role === "user" ? "user" : "agent");
-    div.innerHTML = `<div class="who">${m.role === "user" ?
-      "you" + (m.action && m.action !== "chat" ? " · " + esc(m.action.replace(/_/g," ")) : "")
-      : "agent"}</div><div class="txt"></div>`;
-    if (m.role === "user") tex(div.querySelector(".txt"), m.text);
-    else proseHtml(div.querySelector(".txt"), m.text);
-    box.appendChild(div);
-  }
-  scrollFlow();
-}
-
-function renderLive(){
-  const box = $("live");
-  if (!live || !live.text){ box.innerHTML = ""; return; }
-  box.innerHTML = `<div class="bubble agent"><div class="who">agent</div><span class="txt"></span><span class="cursor"></span></div>`;
-  box.querySelector(".txt").textContent = live.text;   /* rendered as tex on state_patch */
-  scrollFlow();
-}
-
-function renderSide(){
-  /* Lakatos counterexample cards */
-  const DIAG = {
-    local_not_global: "local — breaks a proof step, not the conjecture",
-    global_and_local: "global + local — refutes the conjecture through a step",
-    global_not_local: "global — refutes the conjecture; a hidden lemma is missing",
-  };
-  const cx = $("cxBox");
-  cx.innerHTML = S.counterexamples.length ? '<div class="cap">counterexamples</div>' : "";
-  for (const c of S.counterexamples){
-    const div = document.createElement("div");
-    div.className = "cx";
-    div.innerHTML = `<div class="kind">${esc(DIAG[c.diagnostic] || c.diagnostic)}</div>
-      <div class="desc"></div>
-      ${c.guilty_step_id ? `<div class="note">guilty step: ${esc(c.guilty_step_id)}</div>` : ""}
-      <div class="note">suggested repair: <b>${esc(c.suggested_repair.replace(/_/g," "))}</b></div>
-      ${c.repair_note ? `<div class="note"></div>` : ""}`;
-    tex(div.querySelector(".desc"), c.description_tex);
-    if (c.repair_note) tex(div.querySelectorAll(".note")[c.guilty_step_id ? 2 : 1], c.repair_note);
-    cx.appendChild(div);
-  }
-  /* evidence log */
-  const box = $("evList");
-  box.innerHTML = S.evidence.length ? "" : '<div style="color:var(--ink-muted)">empty</div>';
-  const ICON = {script: "⌨", computation: "∑", citation: "¶", counterexample: "✗", lean: "λ", note: "·"};
-  for (const ev of [...S.evidence].reverse()){
-    const div = document.createElement("div");
-    div.className = "ev";
-    const link = ev.script_path ?
-      ` · <a href="/api/sessions/${esc(S.id)}/files/${esc(ev.script_path)}" target="_blank">${esc(ev.script_path.split("/").pop())}</a>` : "";
-    div.innerHTML = `<div class="k">${ICON[ev.kind] || "·"} ${esc(ev.kind)} ·
-        <span class="badge ${esc(ev.grade)}">${esc(ev.grade.replace(/_/g," "))}</span>
-        ${ev.step_id ? " · " + esc(ev.step_id) : ""}${link}</div>
-      <div class="sum"></div>
-      ${ev.output_excerpt ? `<div class="out">${esc(ev.output_excerpt)}</div>` : ""}`;
-    tex(div.querySelector(".sum"), ev.summary);
-    box.appendChild(div);
-  }
-}
-
 /* -------------------------------------------------------------- actions */
-$("submitBtn").onclick = submitStep;
-$("stmt").addEventListener("keydown", e => {
-  if ((e.metaKey || e.ctrlKey) && e.key === "Enter") submitStep();
+async function sendChat(){
+  const text = $("chatText").value.trim();
+  if (!text || busy) return;
+  try {
+    await api(`/sessions/${S.id}/actions`, {body: {type: "chat", text}});
+    $("chatText").value = "";
+  } catch (e) { appendNotice(e.message); }
+}
+$("sendBtn").onclick = sendChat;
+$("chatText").addEventListener("keydown", e => {
+  if ((e.metaKey || e.ctrlKey) && e.key === "Enter") sendChat();
 });
 
-async function submitStep(){
-  const statement = $("stmt").value.trim();
-  if (!statement || busy) return;
-  try {
-    await api(`/sessions/${S.id}/steps`, {body: {statement, justification: $("just").value.trim()}});
-    $("stmt").value = ""; $("just").value = "";
-  } catch (e) { appendNotice(e.message); }
-}
-
-document.querySelectorAll("#ftr .act").forEach(btn => btn.onclick = async () => {
+document.querySelectorAll("#chips .act").forEach(btn => btn.onclick = async () => {
   if (busy) return;
-  const act = btn.dataset.act;
-  const body = {type: act};
-  if (act === "chat"){
-    const text = $("stmt").value.trim();
-    if (!text){ $("stmt").focus(); return; }
-    body.text = text;
-  }
-  try {
-    await api(`/sessions/${S.id}/actions`, {body});
-    if (act === "chat") $("stmt").value = "";
-  } catch (e) { appendNotice(e.message); }
+  try { await api(`/sessions/${S.id}/actions`, {body: {type: btn.dataset.act}}); }
+  catch (e) { appendNotice(e.message); }
 });
 
 $("intBtn").onclick = () => api(`/sessions/${S.id}/interrupt`).catch(() => {});
@@ -727,7 +830,6 @@ async function boot(){
   try {
     if (q.get("session")) return await openSession(q.get("session"));
     if (q.get("node")){
-      /* reuse an open session for this map node rather than piling up dupes */
       const list = await api("/sessions");
       for (const s of list){
         if (s.status !== "in_progress") continue;
@@ -749,7 +851,7 @@ async function boot(){
     await renderHome();
   } catch (e) {
     $("home").classList.add("on");
-    $("err").textContent = e.message;
+    $("homeErr").textContent = e.message;
   }
 }
 boot();

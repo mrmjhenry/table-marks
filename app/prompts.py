@@ -43,30 +43,69 @@ Rules:
 """
 
 MODE_CONTRACT = """
-## Assistance modes
+## The chat contract (primary interaction)
 
-The action named in each user message defines how much you may take over:
+The human works in a chat. Their free-form messages (action `chat`) can be
+proof steps, questions, or narrative — often mixed. For each message:
 
-- check_step — grade the human's step. Point out gaps precisely. Do NOT
-  rewrite their proof or add your own steps; at most suggest what is
-  missing in the agent_comment.
+1. If it contains one or more PROOF STEPS (claims advancing the argument),
+   record each with `add_step(author='human')` — their step, their words
+   (lightly normalized LaTeX is fine) — then CHECK each one: verify with a
+   script where the domain allows, log evidence, and grade via
+   `update_step` with a precise comment. Split compound messages into
+   separate steps and grade them separately.
+2. If it is a QUESTION, answer it. Use the state tools only if the
+   discussion genuinely changes the proof state.
+3. Narrative/plans: acknowledge briefly, record any embedded steps per (1).
+
+Grades, steps, evidence, and counterexamples live in the drawer UI — the
+chat is prose. Never state a grade only in prose; always make the matching
+tool call too.
+
+## Button actions
+
+- discover — analyze the freshly submitted statement: pin it down (Phase 0),
+  extract objects/definitions, and gather relevant results. See the
+  discovery protocol below. Do NOT start proving.
+- check_step — (re)grade the named step. Point out gaps precisely. Do NOT
+  rewrite their proof or add your own steps.
 - hint — one nudge toward a productive next step. No full solutions, no
   spoilers, no state changes.
-- suggest_next — propose exactly ONE next step via `add_step`, leave it
-  unverified (the human will accept it by asking you to check it, or edit
-  it). Explain your reasoning briefly in prose.
+- suggest_next — propose exactly ONE next step via `add_step` (author
+  'agent'), leave it unverified. Explain briefly in prose.
 - prove_subgoal / prove_remaining — the human delegated this scope to you.
   Run the full prove-conjecture loop: explore, add steps, verify each,
   and finish with `set_status` if the whole proof reaches an exit state.
 - challenge — counterexample hunt on the conjecture and current steps:
   randomized instances, boundary cases, small-n enumeration, saved as
-  scripts. Report hits with `report_counterexample`; if the search comes
-  up empty, log the search itself as evidence (grade: partially_verified).
-- chat — answer the question. Use state tools only if the discussion
-  genuinely changes the proof state.
+  scripts. Report hits with `report_counterexample`; if the hit is
+  machine-verified and definitive, also `set_status(refuted)`. Report an
+  empty search honestly as supporting evidence only.
 
 Write prose for a mathematician: concise, honest about uncertainty, LaTeX
 inside $...$ (the UI renders it with KaTeX).
+
+## Discovery protocol (the `discover` action)
+
+Populate the context drawer via tools — this runs right after the theorem
+is submitted or edited:
+
+1. Pin down the statement precisely (hypotheses ⇒ conclusion); classify it
+   (known / plausibly new / open) per the skill's novelty gate.
+2. `record_definition` for each mathematical object in the statement: the
+   term (with notation) and a 1-2 sentence definition + why it matters here.
+3. `record_discovery` for relevant theorems, lemmas, conjectures, and
+   corollaries. Sources, in order of preference:
+   - the `theorem_search` tool (TheoremSearch, ~9M theorems) when
+     available — a few well-chosen queries; source='theoremsearch';
+   - related conjectures from the map context in this prompt — source='map';
+   - your own knowledge of classical results — source='recalled' (these
+     are [UNVERIFIED-CITATION] until checked; say what each would need).
+   Quality over volume: 4-8 genuinely relevant results with one-line
+   explanations of *why* each matters for THIS proof.
+4. Finish with a short chat summary: the pinned-down statement, the
+   classification, and the most promising opening move. Do not begin
+   proving.
 """
 
 LEAN_PROTOCOL = """
@@ -94,9 +133,11 @@ DEMO_LINE = """
 ## Teaching session
 
 This is a guided walkthrough of a classical theorem for a user learning the
-workspace. When a step is asserted without justification, grade it
-partially_verified (or unverified) and explain the gap — do NOT silently
-fill the gap yourself. Keep commentary encouraging and short.
+workspace. Their chat messages contain the walkthrough's proof steps —
+record each with `add_step(author='human')` and grade it. When a step is
+asserted without justification, grade it partially_verified (or
+unverified) and explain the gap — do NOT silently fill the gap yourself.
+Keep commentary encouraging and short.
 """
 
 
@@ -149,7 +190,13 @@ def build_system_prompt(sess: dict) -> str:
     if ctx:
         parts += ["", ctx]
     parts += [TOOL_PROTOCOL, MODE_CONTRACT]
+    from .agent import theoremsearch_available
     from .lean import checker as _lean
+    if theoremsearch_available():
+        parts.append("\nThe `theorem_search` tool (TheoremSearch MCP) is "
+                     "available this session — use it during discovery and "
+                     "whenever a literature check would help (novelty gate, "
+                     "verifying a recalled citation).")
     if _lean.available:
         parts.append(LEAN_PROTOCOL)
     if sess.get("demo"):
@@ -188,6 +235,14 @@ def _step_line(step: dict) -> str:
 
 def action_prompt(sess: dict, action: dict) -> str:
     kind = action["type"]
+    if kind == "discover":
+        edited = " (the human just EDITED the statement — prior context was cleared; redo it against the new statement)" \
+            if action.get("edited") else ""
+        return (f"The theorem statement was submitted{edited}. Run the "
+                "discovery protocol: pin down the statement, record the "
+                "object definitions and the relevant results via the tools, "
+                "and close with a short summary + suggested opening move. "
+                "Do not start proving.")
     if kind == "check_step":
         step = next(s for s in sess["steps"] if s["id"] == action["step_id"])
         return (f"The human submitted a new proof {_step_line(step)}\n\n"
@@ -248,18 +303,27 @@ def action_prompt(sess: dict, action: dict) -> str:
                 f"(step_id='{step['id']}') with your own faithfulness note. "
                 "Name the Lean declaration after the step id.")
     if kind == "assemble_lean":
-        done = [s for s in sess["steps"]
+        done = [s["id"] for s in sess["steps"]
                 if s.get("lean") and s["lean"]["check"] == "ok"]
-        return ("The human asks you to ASSEMBLE the full Lean proof: one "
-                "file proving the main theorem by chaining the formalized "
-                "step lemmas ("
-                + (", ".join(s["id"] for s in done) or "none yet — say so and stop")
-                + "). Their code is under lean/ in your cwd. Spawn the "
-                "lean-formalizer subagent for the assembly SYNCHRONOUSLY "
-                "(run_in_background: false), review "
-                "faithfulness of the FINAL theorem statement against the "
-                "session's theorem, then call `set_lean` with "
-                "step_id='assembly'.")
+        todo = [s["id"] for s in sess["steps"]
+                if s["status"] == "verified"
+                and not (s.get("lean") and s["lean"]["check"] == "ok")]
+        return ("The human asks you to GENERATE THE LEAN PROOF for the whole "
+                "theorem from the proof so far. "
+                + (f"Already formalized: {', '.join(done)}. " if done else "")
+                + (f"First formalize the remaining verified steps "
+                   f"({', '.join(todo)}) one at a time via the "
+                   "lean-formalizer subagent, spawned SYNCHRONOUSLY "
+                   "(run_in_background: false), reviewing faithfulness and "
+                   "calling `set_lean` for each. "
+                   if todo else "")
+                + "Then assemble: one file proving the main theorem by "
+                "chaining the step lemmas (their code is under lean/ in "
+                "your cwd) — spawn the subagent for the assembly the same "
+                "way, review the FINAL theorem statement's faithfulness "
+                "against the session's theorem, and call `set_lean` with "
+                "step_id='assembly'. If no step is verified yet, say what "
+                "must be proved first and stop.")
     if kind == "chat":
         return action.get("text", "")
     raise ValueError(f"unknown action type {kind!r}")

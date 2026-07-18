@@ -34,10 +34,30 @@ SESSION_STATUSES = {"in_progress", "proved", "refuted", "partial"}
 STEP_KINDS = {"step", "subgoal", "lemma", "case"}
 EVIDENCE_KINDS = {"script", "computation", "citation", "counterexample", "lean", "note"}
 DIAGNOSTICS = {"local_not_global", "global_and_local", "global_not_local"}
+DISCOVERY_SOURCES = {"theoremsearch", "map", "recalled"}
 
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def derive_title(statement: str, limit: int = 70) -> str:
+    """A readable session title from a raw theorem statement: prefer the
+    prose, dropping $...$ math spans rather than mangling them."""
+    import re
+    t = statement.strip()
+    t = re.sub(r"^\s*(prove|show|demonstrate)\s+that\s+", "", t, flags=re.I)
+    def _math(m):        # keep simple math content (n, n^3-n), drop commands
+        inner = re.sub(r"\\[a-zA-Z]+|[{}]", " ", m.group(1))
+        return " " + re.sub(r"\s+", " ", inner).strip() + " "
+    prose = re.sub(r"\$\$?([^$]*)\$\$?", _math, t)
+    prose = re.sub(r"\\[a-zA-Z]+", " ", prose)           # stray commands
+    prose = re.sub(r"\s+", " ", prose).strip(" \t:;,.-—")
+    if len(prose) < 8:                                    # statement was mostly math
+        prose = re.sub(r"[${}\\]", " ", t)
+        prose = re.sub(r"\s+", " ", prose).strip()
+    prose = prose or "Untitled conjecture"
+    return prose if len(prose) <= limit else prose[:limit - 1].rstrip() + "…"
 
 
 # ---------------------------------------------------------------- sessions
@@ -87,13 +107,16 @@ def create_session(*, source_kind: str, node_id: str | None = None,
         "status": "in_progress",
         "status_note": None,
         "steps": [],
+        "discoveries": [],
+        "definitions": [],
         "lean_assembly": None,
         "evidence": [],
         "counterexamples": [],
         "chat": [],
         "claude_session_id": None,
         "guided_cursor": 0,
-        "counters": {"step": 0, "evidence": 0, "cx": 0, "turn": 0},
+        "counters": {"step": 0, "evidence": 0, "cx": 0, "turn": 0,
+                     "disc": 0, "def": 0},
     }
     workspace_dir(sess["id"]).mkdir(parents=True, exist_ok=True)
     save_session(sess)
@@ -113,7 +136,13 @@ def load_session(sid: str) -> dict | None:
     path = session_dir(sid) / "session.json"
     if not path.is_file():
         return None
-    return json.loads(path.read_text())
+    sess = json.loads(path.read_text())
+    # backward compat: sessions created before the discovery feature
+    sess.setdefault("discoveries", [])
+    sess.setdefault("definitions", [])
+    sess["counters"].setdefault("disc", 0)
+    sess["counters"].setdefault("def", 0)
+    return sess
 
 
 def list_sessions() -> list[dict]:
@@ -247,6 +276,30 @@ def add_counterexample(sess: dict, *, description_tex: str, diagnostic: str,
     }
     sess["counterexamples"].append(cx)
     return cx
+
+
+def add_discovery(sess: dict, *, title: str, explanation: str, source: str,
+                  tex: str | None = None) -> dict:
+    if source not in DISCOVERY_SOURCES:
+        raise ValueError(f"bad discovery source {source!r}")
+    d = {"id": _next_id(sess, "disc", "d"), "title": title,
+         "explanation": explanation, "source": source, "tex": tex,
+         "created": now_iso()}
+    sess["discoveries"].append(d)
+    return d
+
+
+def add_definition(sess: dict, *, term: str, definition: str) -> dict:
+    d = {"id": _next_id(sess, "def", "df"), "term": term,
+         "definition": definition, "created": now_iso()}
+    sess["definitions"].append(d)
+    return d
+
+
+def clear_context(sess: dict) -> None:
+    """Drop discoveries/definitions (theorem was edited; they'll be redone)."""
+    sess["discoveries"] = []
+    sess["definitions"] = []
 
 
 def set_status(sess: dict, status: str, note: str | None = None) -> None:

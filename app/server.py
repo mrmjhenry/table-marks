@@ -47,7 +47,7 @@ app = FastAPI(title="proof-workspace", docs_url=None, redoc_url=None,
               lifespan=lifespan)
 
 ACTION_TYPES = {"check_step", "hint", "suggest_next", "prove_subgoal",
-                "prove_remaining", "challenge", "chat",
+                "prove_remaining", "challenge", "chat", "discover",
                 "formalize_step", "assemble_lean"}
 
 
@@ -131,8 +131,20 @@ class StubAgent:
             text = (f"[stub] I would now check step {step['id']} with the "
                     "prove-conjecture skill. The real agent lands in step 4."
                     if step else "[stub] no such step.")
+        elif kind == "discover":
+            store.add_discovery(sess, title="Stub theorem",
+                                explanation="[stub] a relevant result would appear here",
+                                source="recalled")
+            store.add_definition(sess, term="stub object",
+                                 definition="[stub] a definition would appear here")
+            text = "[stub] discovery done — 1 result, 1 definition recorded."
+        elif kind == "chat":
+            # record the message as a human step so chat-first UI flows are testable
+            st = store.add_step(sess, statement_tex=action.get("text", ""),
+                                author="human")
+            text = f"[stub] recorded your message as {st['id']} (unverified)."
         else:
-            text = f"[stub] action '{kind}' acknowledged — real agent lands in step 4."
+            text = f"[stub] action '{kind}' acknowledged — no real agent running."
 
         for word in text.split(" "):          # simulate token streaming
             hub.emit("agent_text", {"turn_id": turn_id, "text": word + " "})
@@ -212,27 +224,38 @@ def demo_get(name: str):
     return _load_demo(name)
 
 
+def _queue_discovery(sess: dict, edited: bool = False) -> None:
+    """New/edited theorem -> the agent gathers context for the drawer."""
+    get_hub(sess["id"]).submit({"type": "discover", "edited": edited,
+                                "_chat": "analyze the theorem and gather context"
+                                         + (" (statement edited)" if edited else "")})
+
+
 @app.post("/api/sessions")
 async def sessions_create(request: Request):
     body = await request.json()
     mode = body.get("mode", "free")
     demo = body.get("demo")
-    if demo:
-        d = _load_demo(demo)
-        sess = store.create_session(source_kind="user",
-                                    title=d["theorem"]["title"],
-                                    tex=d["theorem"]["tex"],
-                                    text=d["theorem"].get("text"),
-                                    mode="guided", demo=demo)
-        return sess
     try:
-        if body.get("node_id"):
+        if demo:
+            d = _load_demo(demo)
+            sess = store.create_session(source_kind="user",
+                                        title=d["theorem"]["title"],
+                                        tex=d["theorem"]["tex"],
+                                        text=d["theorem"].get("text"),
+                                        mode="guided", demo=demo)
+        elif body.get("node_id"):
             sess = store.create_session(source_kind="map_node",
                                         node_id=body["node_id"],
                                         mode=mode, demo=demo)
+        elif body.get("statement"):        # new-UI entry: one statement box
+            stmt = body["statement"].strip()
+            sess = store.create_session(source_kind="user",
+                                        title=store.derive_title(stmt),
+                                        tex=stmt, text=stmt, mode=mode)
         else:
             if not (body.get("title") or body.get("tex") or body.get("text")):
-                raise ValueError("give node_id, or a title/tex/text")
+                raise ValueError("give node_id, a statement, or title/tex/text")
             sess = store.create_session(source_kind="user",
                                         title=body.get("title"),
                                         tex=body.get("tex"),
@@ -240,7 +263,27 @@ async def sessions_create(request: Request):
                                         mode=mode, demo=demo)
     except (ValueError, KeyError) as e:
         raise HTTPException(400, str(e))
+    _queue_discovery(sess)
     return sess
+
+
+@app.post("/api/sessions/{sid}/theorem")
+async def theorem_update(sid: str, request: Request):
+    """Edit the theorem statement; context is cleared and re-discovered."""
+    sess = _load_or_404(sid)
+    _reject_if_busy(sid)
+    body = await request.json()
+    stmt = (body.get("statement") or "").strip()
+    if not stmt:
+        raise HTTPException(400, "statement required")
+    sess["theorem"]["tex"] = stmt
+    sess["theorem"]["text"] = stmt
+    sess["theorem"]["title"] = store.derive_title(stmt)
+    store.clear_context(sess)
+    store.save_session(sess)
+    get_hub(sid).emit("state_patch", {"session": sess})
+    _queue_discovery(sess, edited=True)
+    return {"ok": True}
 
 
 def _load_or_404(sid: str) -> dict:
@@ -308,6 +351,7 @@ async def action_submit(sid: str, request: Request):
     if kind in ("formalize_step", "assemble_lean") and not lean_checker.available:
         raise HTTPException(400, "Lean toolchain not installed on this machine")
     ACTION_PHRASE = {
+        "discover": "analyze the theorem and gather context",
         "check_step": "re-check step {step_id}",
         "hint": "give me a hint",
         "suggest_next": "suggest the next step",

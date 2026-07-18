@@ -8,7 +8,7 @@
   "intro": "Welcome! This walkthrough teaches the workspace on the classic proof that $\\sqrt2$ is irrational. You'll submit each step yourself — type it, or press **use this step** to fill the input — and the agent will genuinely check every step (nothing here is canned). One step ahead is deliberately incomplete, so you can watch the agent catch a gap.",
   "steps": [
     {
-      "coach": "We argue by contradiction. Submit the opening assumption — press **use this step**, then **submit step**.",
+      "coach": "We argue by contradiction. Send the opening assumption — press **use this step**, then **send**.",
       "suggested": {
         "statement": "Suppose toward a contradiction that $\\sqrt{2} = p/q$ where $p, q \\in \\mathbb{Z}$, $q \\neq 0$, and $\\gcd(p,q) = 1$.",
         "justification": "proof by contradiction; every rational number can be written in lowest terms"
@@ -24,13 +24,13 @@
       "expect": ["verified"]
     },
     {
-      "coach": "Next comes the key parity lemma. Submit it EXACTLY as suggested — with the justification left blank — and watch what the agent does with an unjustified claim.",
+      "coach": "Next comes the key parity lemma. Send it EXACTLY as suggested — with no justification — and watch what the agent does with an unjustified claim.",
       "suggested": {
         "statement": "Since $p^2$ is even, $p$ is even.",
         "justification": ""
       },
       "expect": ["partially_verified", "unverified"],
-      "after": "See that? The agent flagged the lemma as not fully verified: true, but asserted without proof. That's the grading discipline — claims earn *verified* only when justified. Let's close the gap by proving the lemma itself as its own step."
+      "after": "See that? The agent flagged the lemma as not fully verified: true, but asserted without proof. That's the grading discipline — claims earn *verified* only when justified (check the proof tab in the drawer). Let's close the gap by proving the lemma itself as its own step."
     },
     {
       "coach": "Justify the parity lemma with the contrapositive.",

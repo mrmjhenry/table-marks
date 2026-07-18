@@ -47,7 +47,35 @@ ALLOWED_TOOLS = [
     "mcp__proof__add_step", "mcp__proof__update_step",
     "mcp__proof__log_evidence", "mcp__proof__report_counterexample",
     "mcp__proof__set_status",
+    "mcp__proof__record_discovery", "mcp__proof__record_definition",
 ]
+
+THEOREMSEARCH_MCP = "https://api.theoremsearch.com/mcp"
+_ts_available: bool | None = None
+
+
+def theoremsearch_available() -> bool:
+    """One cached reachability probe for the TheoremSearch MCP server."""
+    global _ts_available
+    if _ts_available is None:
+        import json as _json
+        import urllib.request
+        try:
+            req = urllib.request.Request(
+                THEOREMSEARCH_MCP,
+                data=_json.dumps({"jsonrpc": "2.0", "id": 1,
+                                  "method": "initialize",
+                                  "params": {"protocolVersion": "2025-03-26",
+                                             "capabilities": {},
+                                             "clientInfo": {"name": "proof-workspace",
+                                                            "version": "0.1"}}}).encode(),
+                headers={"content-type": "application/json",
+                         "accept": "application/json, text/event-stream"})
+            with urllib.request.urlopen(req, timeout=5) as r:
+                _ts_available = b'"result"' in r.read(2000)
+        except Exception:
+            _ts_available = False
+    return _ts_available
 LEAN_TOOLS = ["mcp__proof__lean_check", "mcp__proof__set_lean",
               "Task"]        # Task: spawn the lean-formalizer subagent
 DISALLOWED_TOOLS = ["WebFetch", "WebSearch", "TodoWrite",
@@ -211,28 +239,70 @@ def make_proof_server(runner: "ProofRunner"):
     STATUS = {"enum": ["verified", "partially_verified", "unverified", "refuted"]}
 
     @tool("add_step",
-          "Add a proof step you (the agent) author. Returns its step id.",
+          "Add a proof step to the structured proof state. Use author='human' "
+          "when recording a step the human stated in chat (their words, their "
+          "step); author='agent' (default) for steps you author. Returns its id.",
           {"type": "object",
            "properties": {
                "kind": {"enum": ["step", "subgoal", "lemma", "case"]},
                "statement_tex": {"type": "string"},
                "justification": {"type": "string"},
+               "author": {"enum": ["agent", "human"]},
                "discovery_rationale": {"type": "string",
-                                       "description": "why this step — no rabbits out of hats"},
+                                       "description": "why this step — no rabbits out of hats "
+                                                      "(required for agent-authored steps)"},
                "parent_id": {"type": "string"}},
-           "required": ["kind", "statement_tex", "justification",
-                        "discovery_rationale"]})
+           "required": ["kind", "statement_tex", "justification"]})
     @guarded
     def add_step(a):
         if a.get("parent_id") and not store.get_step(sess(), a["parent_id"]):
             raise KeyError(f"no step {a['parent_id']}")
+        author = a.get("author", "agent")
+        if author == "agent" and not a.get("discovery_rationale"):
+            raise ValueError("agent-authored steps require a discovery_rationale")
         st = store.add_step(sess(), statement_tex=a["statement_tex"],
-                            justification=a["justification"], author="agent",
+                            justification=a["justification"], author=author,
                             kind=a["kind"],
-                            discovery_rationale=a["discovery_rationale"],
+                            discovery_rationale=a.get("discovery_rationale"),
                             parent_id=a.get("parent_id"))
         commit()
-        return _text(f"added {st['id']} (index {st['index']}, unverified)")
+        return _text(f"added {st['id']} (index {st['index']}, {author}, unverified)")
+
+    @tool("record_discovery",
+          "Record a relevant result (theorem/lemma/conjecture/corollary) for the "
+          "context drawer. source: 'theoremsearch' for TheoremSearch hits, 'map' "
+          "for conjecture-map neighbors, 'recalled' for results from your own "
+          "knowledge (these are [UNVERIFIED-CITATION] until checked).",
+          {"type": "object",
+           "properties": {
+               "title": {"type": "string"},
+               "explanation": {"type": "string",
+                               "description": "1-2 sentences: what it says and why it is relevant here"},
+               "source": {"enum": ["theoremsearch", "map", "recalled"]},
+               "tex": {"type": "string", "description": "the statement in LaTeX, if available"}},
+           "required": ["title", "explanation", "source"]})
+    @guarded
+    def record_discovery(a):
+        d = store.add_discovery(sess(), title=a["title"],
+                                explanation=a["explanation"],
+                                source=a["source"], tex=a.get("tex"))
+        commit()
+        return _text(f"recorded {d['id']}")
+
+    @tool("record_definition",
+          "Record a mathematical object extracted from the theorem statement, "
+          "with its definition and a plain explanation, for the context drawer.",
+          {"type": "object",
+           "properties": {
+               "term": {"type": "string",
+                        "description": "the object, e.g. '$\\\\gcd$ — greatest common divisor'"},
+               "definition": {"type": "string"}},
+           "required": ["term", "definition"]})
+    @guarded
+    def record_definition(a):
+        d = store.add_definition(sess(), term=a["term"], definition=a["definition"])
+        commit()
+        return _text(f"recorded {d['id']}")
 
     @tool("update_step",
           "Grade a step (the ONLY way a grade counts) with an explanatory comment.",
@@ -322,7 +392,7 @@ def make_proof_server(runner: "ProofRunner"):
         return _text(f"session status -> {a['status']}")
 
     tools = [add_step, update_step, log_evidence, report_counterexample,
-             set_status]
+             set_status, record_discovery, record_definition]
 
     if lean_checker.available:
 
@@ -432,8 +502,13 @@ class ProofRunner:
             system_prompt={"type": "preset", "preset": "claude_code",
                            "append": prompts.build_system_prompt(sess)},
             resume=resume,
-            mcp_servers={"proof": self.mcp},
-            allowed_tools=ALLOWED_TOOLS + (LEAN_TOOLS if lean_checker.available else []),
+            mcp_servers={"proof": self.mcp} | (
+                {"theoremsearch": {"type": "http", "url": THEOREMSEARCH_MCP}}
+                if theoremsearch_available() else {}),
+            allowed_tools=ALLOWED_TOOLS
+                + (LEAN_TOOLS if lean_checker.available else [])
+                + (["mcp__theoremsearch__theorem_search"]
+                   if theoremsearch_available() else []),
             disallowed_tools=DISALLOWED_TOOLS + ([] if lean_checker.available else ["Task"]),
             can_use_tool=make_permission_handler(self.sid),
             max_turns=MAX_TURNS,
