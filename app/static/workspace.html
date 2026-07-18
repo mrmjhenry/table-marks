@@ -195,6 +195,12 @@
   .srow .del { border: none; background: none; color: var(--ink-muted); font-size: 14px; }
   .srow .del:hover { color: var(--s6); }
   #homeErr { color: var(--s6); font-size: 12px; margin-top: 8px; white-space: pre-wrap; }
+
+  /* live LaTeX preview under the statement boxes */
+  .prev { display: none; margin-top: 8px; border: 1px dashed var(--baseline);
+    border-radius: 8px; padding: 7px 11px 9px; }
+  .prev.on { display: block; }
+  .prev .pbody { font-size: 14.5px; margin-top: 3px; overflow-x: auto; }
 </style>
 </head>
 <body data-tab="context">
@@ -214,6 +220,7 @@
       <div class="cap">theorem / conjecture to prove</div>
       <textarea id="homeStmt" style="margin-top:6px"
         placeholder="State it precisely — LaTeX welcome, $…$ around math.&#10;e.g.  Prove that $\sqrt{2} \notin \mathbb{Q}$."></textarea>
+      <div class="prev" id="homePrev"><div class="cap">preview</div><div class="pbody"></div></div>
       <div class="row">
         <button class="primary" id="homeSubmit">submit</button>
         <span class="hint">on submit the agent pins down the statement, finds relevant results, and extracts definitions</span>
@@ -255,6 +262,7 @@
         <div id="thmEditBox">
           <div class="cap" style="margin-bottom:6px">edit the statement — context will be re-discovered</div>
           <textarea id="thmEditText"></textarea>
+          <div class="prev" id="editPrev"><div class="cap">preview</div><div class="pbody"></div></div>
           <div class="row">
             <button class="primary" id="thmSaveBtn">resubmit</button>
             <button class="mini" id="thmCancelBtn">cancel</button>
@@ -427,6 +435,24 @@ async function renderHome(){
   }
 }
 
+/* live LaTeX preview under a statement textarea */
+function wirePreview(taId, prevId){
+  const ta = $(taId), pv = $(prevId), body = pv.querySelector(".pbody");
+  let timer = null;
+  const update = () => {
+    const s = ta.value.trim();
+    pv.classList.toggle("on", !!s);
+    if (s) tex(body, s);
+  };
+  ta.addEventListener("input", () => {
+    clearTimeout(timer);
+    timer = setTimeout(update, 120);
+  });
+  return update;
+}
+const updateHomePreview = wirePreview("homeStmt", "homePrev");
+const updateEditPreview = wirePreview("thmEditText", "editPrev");
+
 $("homeSubmit").onclick = async () => {
   const statement = $("homeStmt").value.trim();
   $("homeErr").textContent = "";
@@ -549,6 +575,7 @@ $("thmEditBtn").onclick = () => {
   if (busy){ appendNotice("wait for the current turn to finish before editing"); return; }
   $("thmEditText").value = S.theorem.tex || S.theorem.text || "";
   document.body.classList.add("editing");
+  updateEditPreview();          /* value was set programmatically */
   $("thmEditText").focus();
 };
 $("thmCancelBtn").onclick = () => document.body.classList.remove("editing");
