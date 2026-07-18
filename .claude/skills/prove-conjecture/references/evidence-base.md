@@ -1,6 +1,6 @@
 # References and evidence base for the prove-conjecture skill
 
-Findings from a literature review (July 2026) on structured methodologies for conjecture proving, run to extend the skill beyond its original CERME10 basis. Claims marked **[verified]** survived 3-0 adversarial verification against primary sources; claims marked **[extracted]** come from fetched primary sources but were not independently re-verified.
+Findings from a literature review (July 2026) on structured methodologies for conjecture proving, run to extend the skill beyond its original CERME10 basis, plus (§10) the LLM-assisted-proving sources behind the 2026-07 verification/provenance augmentation. Claims marked **[verified]** survived 3-0 adversarial verification against primary sources; claims marked **[extracted]** come from fetched primary sources but were not independently re-verified.
 
 ## 1. CERME10 base model (original skill foundation)
 
@@ -62,9 +62,22 @@ Sources: gowers.wordpress.com (2022 announcement), wtgowers.github.io/human-styl
 - **[extracted]** Weber & Mejia-Ramos line (Educ. Studies in Math.): mathematicians validate proofs by **instantiating individual proof steps on concrete examples** (a per-step sanity check), and reading-to-comprehend vs refereeing are distinct activities — supporting separate technique-harvesting and adversarial-verification reading modes.
 - **[extracted]** Lockwood, Ellis & Knuth: taxonomy of example **types, uses, and strategies**, distinguishing example use during conjecture formulation from example use during proving.
 
+## 10. LLM-assisted proving: successes and failure modes (2024–2026)
+
+Basis for the verification protocol, oracle hierarchy, novelty gate, and provenance discipline added in the 2026-07 augmentation (see `verification-protocol.md`, `failure-modes.md`, `lean-bridge.md`). These are cited for provenance; the model should not need to re-read them at runtime.
+
+- **[extracted]** GPT-5 science-acceleration case studies (arXiv:2511.16072): documents both genuine assists and confabulation under pressure to produce a complete result. Reinforces: falsify before proving, and never fabricate a step to satisfy a completeness request.
+- **[extracted]** Malliavin–Stein experiment (arXiv:2509.03065): a published workflow that explored special cases and numerics before the general argument — the strengthen-a-quantitative-bound / generalize-a-special-case pattern behind most LLM-derived new results.
+- **[extracted]** Gemini / Erdős-problems case study (arXiv:2601.22401): AI systems "solved" problems settled decades earlier; motivates the **novelty gate** (never assert novelty without a recorded literature search). ~2.5% of withdrawn arXiv math preprints duplicate prior results.
+- **[extracted]** FirstProof benchmark and responses (arXiv:2602.05192, arXiv:2602.21201): error-class breakdown; inequality-direction and constant-tracking errors are the most common surviving defects, motivating numeric spot checks on the *final* proof.
+- **[extracted]** LLM-generated Kochen–Specker paper with adversarial cross-model review (arXiv:2603.16988): substantive errors were found in review **rounds 2 and 5** — errors survive early rounds, motivating multi-round adversarial verification and cross-model independence (oracle Tier 3).
+- **[verified]** Process supervision — "Let's Verify Step by Step" (Lightman et al., arXiv:2305.20050): step-level (process) checking materially outperforms outcome-level (holistic) checking. Basis for the step-by-step audit requirement over "the proof looks correct overall."
+- **[extracted]** Draft–Sketch–Prove (arXiv:2210.12283) — see §7; the pattern behind the Tier 4 Lean bridge (`lean-bridge.md`).
+
 ## Open questions from the review
 
 1. How to operationalize wild-subproblem integration — what moves turn a solved auxiliary lemma into progress on the main problem?
 2. Can "proof justification" be made checkable rather than heuristic?
 3. Do the Polymath/MathOverflow effort distributions transfer to research-level open conjectures?
 4. Which Lakatosian repair operations can be reliably automated, and what is the decision policy among them?
+5. Without a second model family available, how much independence does clean-context single-family adversarial review actually buy (Tier 2 vs Tier 3)?
