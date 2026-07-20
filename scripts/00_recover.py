@@ -27,7 +27,7 @@ OUT = ROOT / "data" / "recovered.jsonl"
 FAIL = ROOT / "data" / "recover_failures.jsonl"
 
 DELAY_S = 3.0
-UA = "openconjecture-map/1.0 (personal research; contact: michael.boz@gmail.com)"
+UA = "openconjecture-map/1.0 (personal research; contact: https://github.com/mrmjhenry/explore-open-conjectures)"
 
 
 def fetch_eprint(arxiv_id: str, url: str) -> Path | None:
