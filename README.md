@@ -1,4 +1,4 @@
-# Proof Workspace
+# Table Marks
 
 An interactive theorem-proving workspace: state a theorem or conjecture in
 LaTeX, then prove it step by step in a chat with an agent that **checks your
