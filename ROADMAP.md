@@ -148,8 +148,9 @@ is wired in.
 
 ### W4. Ground-truth eval set for the augmented skill
 
-Section 6 of `math-proof-skill-augmentation.md`, deferred from the
-augmentation pass. Build a small labeled set: (a) true statements with known
+Deferred from the 2026-07 skill-augmentation pass (spec was
+`math-proof-skill-augmentation.md`, now removed — in git history if needed).
+Build a small labeled set: (a) true statements with known
 proofs at varying difficulty, (b) plausible-looking **false** statements
 (tests the Phase 1 falsification gate — the highest-value addition), (c)
 true statements published long ago under different terminology (tests the
