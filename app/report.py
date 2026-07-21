@@ -66,6 +66,9 @@ p { margin:10px 0; }
 .chat .a { background:#fff; border:1px solid var(--border); }
 .chat .who { font:600 10px system-ui, sans-serif; text-transform:uppercase;
              letter-spacing:.4px; color:var(--muted); margin-bottom:4px; }
+.chat .txt, .step .comment { white-space:pre-wrap; }
+.chat .txt code { font:12.5px ui-monospace, Menlo, monospace; background:#f4f4f1;
+                  padding:0 4px; border-radius:4px; }
 .narr h2 { border:none; margin:26px 0 8px; }
 .katex { font-size:1.05em; }
 @media print { .step, .chat .m { break-inside:avoid; } }
@@ -142,6 +145,15 @@ def _md(text: str) -> str:
     return h
 
 
+def _prose(s) -> str:
+    """Chat/comment text: escaped, with **bold** and `code` rendered and
+    whitespace preserved via the pre-wrap CSS (math left for KaTeX)."""
+    h = _esc(s)
+    h = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", h, flags=re.S)
+    h = re.sub(r"`([^`\n]+)`", r"<code>\1</code>", h)
+    return h
+
+
 def _badge(status: str) -> str:
     c = GRADE_COLOR.get(status, "#898781")
     return (f'<span class="badge" style="color:{c};border-color:{c}">'
@@ -178,7 +190,7 @@ def build_report_html(sess: dict) -> str:
           <div data-tex>{_esc(st["statement_tex"])}</div>
           {f'<div class="just" data-tex>Justification: {_esc(st["justification"])}</div>' if st["justification"] else ""}
           {f'<div class="why" data-tex>✦ {_esc(st["discovery_rationale"])}</div>' if st.get("discovery_rationale") else ""}
-          {f'<div class="comment" data-tex>{_esc(st["agent_comment"])}</div>' if st.get("agent_comment") else ""}
+          {f'<div class="comment" data-tex>{_prose(st["agent_comment"])}</div>' if st.get("agent_comment") else ""}
           {ev}
         </div>""")
 
@@ -188,7 +200,7 @@ def build_report_html(sess: dict) -> str:
             <span>{_esc(c["diagnostic"].replace("_", " "))}</span>
             <span>repair: {_esc(c["suggested_repair"].replace("_", " "))}</span></div>
           <div data-tex>{_esc(c["description_tex"])}</div>
-          {f'<div class="comment" data-tex>{_esc(c["repair_note"])}</div>' if c.get("repair_note") else ""}
+          {f'<div class="comment" data-tex>{_prose(c["repair_note"])}</div>' if c.get("repair_note") else ""}
         </div>""" for c in sess["counterexamples"])
 
     # ---- context
@@ -222,7 +234,7 @@ def build_report_html(sess: dict) -> str:
           <div class="who">{'you' + (' · ' + _esc(m['action'].replace('_', ' '))
                             if m.get('action') and m.get('action') != 'chat' else '')
                             if m['role'] == 'user' else 'agent'}</div>
-          <div data-tex>{_esc(m["text"])}</div>
+          <div class="txt" data-tex>{_prose(m["text"])}</div>
         </div>""" for m in sess["chat"])
 
     katex_css = KATEX_CSS.read_text() if KATEX_CSS.is_file() else ""
