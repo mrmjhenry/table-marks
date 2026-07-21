@@ -67,10 +67,8 @@ p { margin:10px 0; }
 .chat .who { font:600 10px system-ui, sans-serif; text-transform:uppercase;
              letter-spacing:.4px; color:var(--muted); margin-bottom:4px; }
 .narr h2 { border:none; margin:26px 0 8px; }
-details { margin:14px 0; }
-summary { font:600 14px system-ui, sans-serif; cursor:pointer; color:var(--ink2); }
 .katex { font-size:1.05em; }
-@media print { .chat-details { display:none; } }
+@media print { .step, .chat .m { break-inside:avoid; } }
 """
 
 RENDER_JS = """
@@ -262,11 +260,8 @@ def build_report_html(sess: dict) -> str:
   <h2 class="lean">Lean formalization</h2>
   <div class="lean">{lean_html}</div>
 
-  <h2>Conversation transcript</h2>
-  <details class="chat-details"><summary>show the full conversation
-    ({len(sess["chat"])} messages)</summary>
-    <div class="chat">{chat_html}</div>
-  </details>
+  <h2>Conversation transcript ({len(sess["chat"])} messages)</h2>
+  <div class="chat">{chat_html}</div>
 </div>
 <script>{katex_js}</script>
 <script>{RENDER_JS}</script>
