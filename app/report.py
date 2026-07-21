@@ -109,12 +109,19 @@ def _md(text: str) -> str:
     for line in _esc(text).splitlines():
         s = line.strip()
         if s.startswith("```"):
-            if in_fence:
+            rest = s[3:].strip()
+            if in_fence:                          # closing line
                 out.append("<pre><code>" + "\n".join(fence) + "</code></pre>")
                 fence.clear()
+                in_fence = False
+            elif rest.endswith("```") and len(rest) > 3:
+                flush()                           # one-line ``` code ``` block
+                out.append("<pre><code>" + rest[:-3].strip() + "</code></pre>")
             else:
                 flush()
-            in_fence = not in_fence
+                in_fence = True
+                if rest and " " in rest:          # content (not a language tag)
+                    fence.append(rest)
         elif in_fence:
             fence.append(line)
         elif not s:
