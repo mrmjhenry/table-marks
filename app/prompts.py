@@ -324,6 +324,26 @@ def action_prompt(sess: dict, action: dict) -> str:
                 "against the session's theorem, and call `set_lean` with "
                 "step_id='assembly'. If no step is verified yet, say what "
                 "must be proved first and stop.")
+    if kind == "generate_report":
+        return ("The human asks for the FINAL PROOF REPORT. Read "
+                "`../session.json` (relative to your cwd) for the complete "
+                "record — steps with grades and evidence, discoveries, "
+                "definitions, counterexamples, Lean code, chat. Then write "
+                "the report narrative and call `set_report_narrative` with "
+                "it. The narrative (markdown: ## headings, **bold**, $math$) "
+                "should cover: the precise statement and its classification; "
+                "the proof strategy and its key ideas; how the argument "
+                "unfolded (including any gaps caught and repaired, or "
+                "Lakatos events); what the executable checks established; "
+                "how the Lean formalization corresponds to the informal "
+                "proof (note any faithfulness subtleties); and relevant "
+                "surrounding facts from the discovered context. END with a "
+                "'## Provenance' section: per-step verification tier, which "
+                "claims were machine-checked vs argued informally, and the "
+                "consulted-vs-recalled status of every citation. Accuracy "
+                "over flourish — describe only what the record supports. "
+                "The mechanical sections (steps, context, Lean, transcript) "
+                "are appended automatically; do NOT restate them verbatim.")
     if kind == "chat":
         return action.get("text", "")
     raise ValueError(f"unknown action type {kind!r}")

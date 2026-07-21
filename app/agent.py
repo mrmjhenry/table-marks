@@ -48,6 +48,7 @@ ALLOWED_TOOLS = [
     "mcp__proof__log_evidence", "mcp__proof__report_counterexample",
     "mcp__proof__set_status",
     "mcp__proof__record_discovery", "mcp__proof__record_definition",
+    "mcp__proof__set_report_narrative",
 ]
 
 THEOREMSEARCH_MCP = "https://api.theoremsearch.com/mcp"
@@ -391,8 +392,32 @@ def make_proof_server(runner: "ProofRunner"):
         commit()
         return _text(f"session status -> {a['status']}")
 
+    @tool("set_report_narrative",
+          "Set the narrative for the final proof report and build the report "
+          "file. Only callable once the Lean assembly is machine-checked. "
+          "Markdown allowed (## headings, **bold**, $math$). The narrative "
+          "must end with a provenance section (per-step oracle tiers, "
+          "machine-checked vs informal, citation consulted-vs-recalled).",
+          {"type": "object",
+           "properties": {"narrative": {"type": "string"}},
+           "required": ["narrative"]})
+    @guarded
+    def set_report_narrative(a):
+        s = sess()
+        asm = s.get("lean_assembly") or {}
+        if not (asm.get("check") == "ok"
+                and asm.get("faithful") not in (None, "unreviewed")):
+            raise ValueError("report requires a machine-checked Lean assembly")
+        from . import report as report_mod
+        s["report"] = {"narrative": a["narrative"],
+                       "generated_at": now_iso()}
+        path = report_mod.write_report(s)
+        commit()
+        return _text(f"report built at {path}")
+
     tools = [add_step, update_step, log_evidence, report_counterexample,
-             set_status, record_discovery, record_definition]
+             set_status, record_discovery, record_definition,
+             set_report_narrative]
 
     if lean_checker.available:
 

@@ -778,6 +778,29 @@ function renderDrawer(){
         .catch(e => appendNotice(e.message));
       row.appendChild(aff);
     }
+    /* report: available once the assembly is machine-checked */
+    if (rec.check === "ok" && rec.faithful !== "unreviewed"){
+      const gen = document.createElement("button");
+      gen.className = S.report ? "mini" : "primary";
+      if (!S.report){ gen.style.padding = "5px 13px"; gen.style.fontSize = "12.5px"; }
+      gen.textContent = S.report ? "re-generate report" : "📄 generate report";
+      gen.title = "the agent writes a narrative; the report bundles it with the " +
+                  "proof, context, Lean code, and transcript";
+      gen.onclick = () => { if (!busy)
+        api(`/sessions/${S.id}/actions`, {body: {type: "generate_report"}})
+          .catch(e => appendNotice(e.message)); };
+      row.appendChild(gen);
+      if (S.report){
+        const view = document.createElement("a");
+        view.className = "badge lbadge verified";
+        view.style.textDecoration = "none";
+        view.textContent = "📄 view report ↗";
+        view.href = `/api/sessions/${S.id}/report`;
+        view.target = "_blank";
+        view.title = "generated " + S.report.generated_at;
+        row.appendChild(view);
+      }
+    }
     $("leanCode").style.display = "";
     $("leanCode").textContent = rec.code;
   } else {

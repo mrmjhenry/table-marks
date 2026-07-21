@@ -137,9 +137,10 @@ def load_session(sid: str) -> dict | None:
     if not path.is_file():
         return None
     sess = json.loads(path.read_text())
-    # backward compat: sessions created before the discovery feature
+    # backward compat: sessions created before newer features
     sess.setdefault("discoveries", [])
     sess.setdefault("definitions", [])
+    sess.setdefault("report", None)
     sess["counters"].setdefault("disc", 0)
     sess["counters"].setdefault("def", 0)
     return sess

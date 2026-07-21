@@ -48,7 +48,13 @@ app = FastAPI(title="proof-workspace", docs_url=None, redoc_url=None,
 
 ACTION_TYPES = {"check_step", "hint", "suggest_next", "prove_subgoal",
                 "prove_remaining", "challenge", "chat", "discover",
-                "formalize_step", "assemble_lean"}
+                "formalize_step", "assemble_lean", "generate_report"}
+
+
+def _lean_machine_checked(sess: dict) -> bool:
+    asm = sess.get("lean_assembly") or {}
+    return (asm.get("check") == "ok"
+            and asm.get("faithful") not in (None, "unreviewed"))
 
 
 # ------------------------------------------------------------------ hubs
@@ -143,6 +149,14 @@ class StubAgent:
             st = store.add_step(sess, statement_tex=action.get("text", ""),
                                 author="human")
             text = f"[stub] recorded your message as {st['id']} (unverified)."
+        elif kind == "generate_report":
+            from . import report as report_mod
+            sess["report"] = {"narrative": "## Overview\n[stub] narrative "
+                              "would appear here, with **bold** and $x^2$.\n\n"
+                              "## Provenance\n[stub] tier accounting here.",
+                              "generated_at": store.now_iso()}
+            report_mod.write_report(sess)
+            text = "[stub] report generated."
         else:
             text = f"[stub] action '{kind}' acknowledged — no real agent running."
 
@@ -353,6 +367,8 @@ async def action_submit(sid: str, request: Request):
         raise HTTPException(400, "chat needs text")
     if kind in ("formalize_step", "assemble_lean") and not lean_checker.available:
         raise HTTPException(400, "Lean toolchain not installed on this machine")
+    if kind == "generate_report" and not _lean_machine_checked(sess):
+        raise HTTPException(400, "the report requires a machine-checked Lean assembly")
     ACTION_PHRASE = {
         "discover": "analyze the theorem and gather context",
         "check_step": "re-check step {step_id}",
@@ -363,6 +379,7 @@ async def action_submit(sid: str, request: Request):
         "challenge": "challenge the conjecture",
         "formalize_step": "formalize step {step_id} in Lean",
         "assemble_lean": "assemble the full Lean proof",
+        "generate_report": "generate the final proof report",
     }
     text = (body.get("text") or "").strip() or \
         ACTION_PHRASE[kind].format(step_id=body.get("step_id", "?"))
@@ -492,6 +509,16 @@ async def session_events(sid: str):
 
     return StreamingResponse(gen(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/api/sessions/{sid}/report")
+def session_report(sid: str):
+    """The generated proof report (self-contained HTML)."""
+    _load_or_404(sid)
+    p = store.session_dir(sid) / "report.html"
+    if not p.is_file():
+        raise HTTPException(404, "no report generated yet")
+    return FileResponse(p, media_type="text/html")
 
 
 @app.get("/api/sessions/{sid}/files/{path:path}")
