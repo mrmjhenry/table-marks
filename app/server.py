@@ -26,7 +26,7 @@ from fastapi.responses import (FileResponse, JSONResponse, PlainTextResponse,
                                StreamingResponse)
 from fastapi.staticfiles import StaticFiles
 
-from . import store
+from . import knowledge, store
 from .lean import checker as lean_checker, lean_result_word
 from .store import ROOT, now_iso
 
@@ -138,12 +138,20 @@ class StubAgent:
                     "prove-conjecture skill. The real agent lands in step 4."
                     if step else "[stub] no such step.")
         elif kind == "discover":
+            store.set_field(sess, primary="11B25", refinement="stub refinement")
+            entry, created = knowledge.add_entry(
+                "11B25", kind="technique", title="Stub technique",
+                body="[stub] a field technique would appear here",
+                origin="seeded", session_id=sess["id"])
+            if created or entry["id"] not in sess["kb_contributions"]:
+                sess["kb_contributions"].append(entry["id"])
             store.add_discovery(sess, title="Stub theorem",
                                 explanation="[stub] a relevant result would appear here",
                                 source="recalled")
             store.add_definition(sess, term="stub object",
                                  definition="[stub] a definition would appear here")
-            text = "[stub] discovery done — 1 result, 1 definition recorded."
+            text = ("[stub] discovery done — field 11B25 set, 1 result, "
+                    "1 definition, 1 playbook entry recorded.")
         elif kind == "chat":
             # record the message as a human step so chat-first UI flows are testable
             st = store.add_step(sess, statement_tex=action.get("text", ""),
@@ -388,6 +396,21 @@ async def action_submit(sid: str, request: Request):
     action["_chat"] = text          # recorded by the worker at turn start
     hub.submit(action)
     return {"queued": True, "pending": hub.queue.qsize()}
+
+
+@app.get("/api/knowledge")
+def knowledge_query(code: str | None = None, query: str | None = None,
+                    kind: str | None = None):
+    """Read-only KB lookup for the UI (and the curious)."""
+    if not code and not query:
+        raise HTTPException(400, "give code and/or query")
+    if query:
+        entries = knowledge.search(query, code=code, kind=kind)
+    else:
+        entries = knowledge.entries_for(code)
+        if kind:
+            entries = [e for e in entries if e["kind"] == kind]
+    return {"entries": entries}
 
 
 @app.get("/api/lean/status")

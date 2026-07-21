@@ -160,6 +160,38 @@ def _badge(status: str) -> str:
             f'{_esc(status.replace("_", " "))}</span>')
 
 
+def _field_meta(sess: dict) -> str:
+    f = sess.get("field")
+    if not f:
+        return ""
+    d = f"{f['primary']['code']} {f['primary']['name'] or ''}"
+    if f.get("refinement"):
+        d += f" ({f['refinement']})"
+    return _esc(d) + " ·"
+
+
+def _kb_section(sess: dict) -> str:
+    ids = sess.get("kb_contributions") or []
+    if not ids:
+        return ""
+    from . import knowledge
+    items = []
+    for i in ids:
+        e = knowledge.get_entry(i)
+        if not e:
+            continue                      # entry curated away since; skip
+        items.append(
+            f'<div class="dItem"><div class="t" data-tex>{_esc(e["title"])} '
+            f'<span class="chip">{_esc(e["kind"].replace("_", " "))}</span> '
+            f'<span class="chip">{_esc(e["provenance"]["status"].replace("_", " "))}</span>'
+            f'</div><div class="x" data-tex>{_esc(e["body"])}</div></div>')
+    if not items:
+        return ""
+    return ("<h3>Knowledge-base contributions</h3>"
+            "<p class='meta'>recorded to the shared field knowledge base "
+            "during this session</p>" + "".join(items))
+
+
 def build_report_html(sess: dict) -> str:
     t = sess["theorem"]
     rep = sess.get("report") or {}
@@ -255,6 +287,7 @@ def build_report_html(sess: dict) -> str:
 <div class="wrap">
   <h1 data-tex>{_esc(t["title"])}</h1>
   <div class="meta">proof report · {_esc(sess["status"].replace("_", " "))} ·
+    {_field_meta(sess)}
     {'λ machine-checked (Lean 4 / Mathlib)' if checked else 'not machine-checked'} ·
     generated {_esc(rep.get("generated_at", ""))} · session {_esc(sess["id"])}</div>
   <div class="stmt" data-tex>{_esc(t.get("tex") or t.get("text") or "")}</div>
@@ -268,6 +301,7 @@ def build_report_html(sess: dict) -> str:
   <h2>Context</h2>
   <h3>Relevant results</h3>{disc_html}
   <h3>Objects &amp; definitions</h3>{defs_html}
+  {_kb_section(sess)}
 
   <h2 class="lean">Lean formalization</h2>
   <div class="lean">{lean_html}</div>

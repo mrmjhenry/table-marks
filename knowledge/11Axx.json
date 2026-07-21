@@ -1,0 +1,112 @@
+{
+  "code": "11Axx",
+  "name": "Elementary number theory",
+  "updated": "2026-07-21T17:40:42+00:00",
+  "counters": {
+    "entry": 6
+  },
+  "entries": [
+    {
+      "id": "11Axx-k001",
+      "code": "11A07",
+      "kind": "technique",
+      "title": "Split-modulus via coprime factors, recombine by CRT / multiplicativity",
+      "body": "To show $m \\mid k$ where $m=ab$ with $\\gcd(a,b)=1$, it suffices to show $a\\mid k$ and $b\\mid k$ separately — the two combine because coprime divisors of a common number multiply. Standard reduction for composite-modulus divisibility claims like $24=8\\cdot3$; avoids working mod 24 directly.",
+      "refinement": null,
+      "provenance": {
+        "origin": "seeded",
+        "session_ids": [
+          "s_20260721_27b126"
+        ],
+        "status": "recalled_unverified"
+      },
+      "created": "2026-07-21T17:37:53+00:00",
+      "updated": "2026-07-21T17:37:53+00:00"
+    },
+    {
+      "id": "11Axx-k002",
+      "code": "11A07",
+      "kind": "technique",
+      "title": "Difference-of-squares factorization for $p^2-1$-type claims",
+      "body": "Rewrite $p^2-1=(p-1)(p+1)$ to turn a statement about one number's square into a statement about two consecutive even integers flanking $p$. This is the standard first move whenever a divisibility/congruence claim targets $n^2-1$ or $n^2-c^2$.",
+      "refinement": null,
+      "provenance": {
+        "origin": "seeded",
+        "session_ids": [
+          "s_20260721_27b126"
+        ],
+        "status": "recalled_unverified"
+      },
+      "created": "2026-07-21T17:37:55+00:00",
+      "updated": "2026-07-21T17:37:55+00:00"
+    },
+    {
+      "id": "11Axx-k003",
+      "code": "11A07",
+      "kind": "assumption",
+      "title": "Excluding small primes (here 2, 3) is exactly excluding the prime factors of the modulus",
+      "body": "In \"for every prime $p>3$\" type statements, the excluded small primes are typically exactly the prime factors of the modulus in the conclusion (here $24=2^3\\cdot3$). Check this correspondence first: it usually tells you which coprimality facts ($p$ odd, $3\\nmid p$) drive the whole proof, and confirms the bound ($p>3$) is tight, not arbitrary.",
+      "refinement": null,
+      "provenance": {
+        "origin": "seeded",
+        "session_ids": [
+          "s_20260721_27b126"
+        ],
+        "status": "recalled_unverified"
+      },
+      "created": "2026-07-21T17:37:57+00:00",
+      "updated": "2026-07-21T17:37:57+00:00"
+    },
+    {
+      "id": "11Axx-k004",
+      "code": "11A07",
+      "kind": "pitfall",
+      "title": "Don't conflate the two coprime-factor arguments",
+      "body": "When splitting $24=8\\times3$, the divisibility-by-8 argument uses parity/mod-4 case analysis on $p-1,p+1$, while divisibility-by-3 uses $p\\bmod3$ case analysis — they are independent case splits on different moduli. A common slip is to try to get both from one case split (e.g. only casing on $p\\bmod 4$ and hoping it also settles mod 3), which silently drops the mod-3 argument.",
+      "refinement": null,
+      "provenance": {
+        "origin": "seeded",
+        "session_ids": [
+          "s_20260721_27b126"
+        ],
+        "status": "recalled_unverified"
+      },
+      "created": "2026-07-21T17:38:00+00:00",
+      "updated": "2026-07-21T17:38:00+00:00"
+    },
+    {
+      "id": "11Axx-k005",
+      "code": "11A07",
+      "kind": "literature",
+      "title": "$N\\mid24$ iff every unit mod $N$ squares to 1 (exponent-2 characterization)",
+      "body": "Kaidi–Perlmutter (arXiv:2008.02190, Thm C.1): $\\forall \\ell$ coprime to $N$, $\\ell^2\\equiv1\\pmod N \\iff N\\mid24$. Explains structurally why 24 (not some other number) is the sharp modulus for \"square of any integer coprime to 6\" claims — $(\\mathbb{Z}/24\\mathbb{Z})^\\times\\cong(\\mathbb{Z}/2)^3$ has exponent 2, and 24 is maximal with this property. Durable fact for this field, reusable whenever a \"$n^2\\equiv1\\pmod N$ for all $n$ coprime to something\" claim appears.",
+      "refinement": null,
+      "provenance": {
+        "origin": "theoremsearch",
+        "session_ids": [
+          "s_20260721_27b126"
+        ],
+        "status": "cited"
+      },
+      "created": "2026-07-21T17:38:03+00:00",
+      "updated": "2026-07-21T17:38:03+00:00"
+    },
+    {
+      "id": "11Axx-k006",
+      "code": "11A07",
+      "kind": "lemma",
+      "title": "$24 \\mid p^2-1$ for every prime $p>3$ (this session's proved instance)",
+      "body": "Proved via $p^2-1=(p-1)(p+1)$: $p$ odd $\\Rightarrow$ one of $p-1,p+1$ div. by 4 $\\Rightarrow$ $8\\mid(p-1)(p+1)$ (exhaustive case split on $p\\bmod4\\in\\{1,3\\}$); $3\\nmid p \\Rightarrow$ one of $p-1,p+1$ div. by 3 (exhaustive case split on $p\\bmod3\\in\\{1,2\\}$); $\\gcd(8,3)=1$ combines the two. Generalizes verbatim to any integer coprime to 6 (matches ProofWiki's \"Square Modulo 24 of Odd Integer Not Divisible by 3\"), since the proof only ever used $2\\nmid p$ and $3\\nmid p$, never primality itself — primality only entered via Phase 0's observation that the excluded cases ($p=2,3$) are exactly the prime factors of the modulus.",
+      "refinement": null,
+      "provenance": {
+        "origin": "session",
+        "session_ids": [
+          "s_20260721_27b126"
+        ],
+        "status": "verified"
+      },
+      "created": "2026-07-21T17:40:42+00:00",
+      "updated": "2026-07-21T17:40:42+00:00"
+    }
+  ]
+}

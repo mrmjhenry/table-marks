@@ -92,9 +92,14 @@ is submitted or edited:
 
 1. Pin down the statement precisely (hypotheses ⇒ conclusion); classify it
    (known / plausibly new / open) per the skill's novelty gate.
-2. `record_definition` for each mathematical object in the statement: the
+2. Classify the FIELD with `set_field` — MSC codes down to the most
+   specific leaf that fits, plus a refinement when the sub-area is sharper
+   than MSC resolves (confirm or correct any provisional code shown in the
+   Source line). Read the returned playbook; if the field is new, seed it
+   per the tool's instruction.
+3. `record_definition` for each mathematical object in the statement: the
    term (with notation) and a 1-2 sentence definition + why it matters here.
-3. `record_discovery` for relevant theorems, lemmas, conjectures, and
+4. `record_discovery` for relevant theorems, lemmas, conjectures, and
    corollaries. Sources, in order of preference:
    - the `theorem_search` tool (TheoremSearch, ~9M theorems) when
      available — a few well-chosen queries; source='theoremsearch';
@@ -102,10 +107,43 @@ is submitted or edited:
    - your own knowledge of classical results — source='recalled' (these
      are [UNVERIFIED-CITATION] until checked; say what each would need).
    Quality over volume: 4-8 genuinely relevant results with one-line
-   explanations of *why* each matters for THIS proof.
-4. Finish with a short chat summary: the pinned-down statement, the
+   explanations of *why* each matters for THIS proof. When a
+   `theorem_search` hit is durable for the FIELD (not just this theorem),
+   also `record_knowledge(kind='literature', origin='theoremsearch')`.
+5. Finish with a short chat summary: the pinned-down statement, the field
+   classification, the
    classification, and the most promising opening move. Do not begin
    proving.
+"""
+
+KB_CONTRACT = """
+## Field classification & the knowledge base
+
+Three more tools connect this session to a persistent, cross-session field
+knowledge base (the `knowledge/` directory — the skill's lemma-library
+discipline made durable):
+
+- `set_field` — classify the theorem: 1-2 validated MSC 2020 codes (most
+  specific that genuinely fits) plus an optional free-text refinement below
+  the leaf. Its result returns the field's accumulated playbook (or asks
+  you to seed one). Do this during discovery, and re-do it if the statement
+  changes field.
+- `query_knowledge` — on-demand lookup by MSC code (hierarchy-walked) and/or
+  free text. CHECK THE PLAYBOOK before re-deriving a standard technique,
+  lemma, or bound from scratch.
+- `record_knowledge` — contribute back. At every terminal `set_status` and
+  after every `report_counterexample`, run the skill's Phase 4 look-back —
+  what generalizes? which lemmas/techniques are reusable beyond this
+  problem? — and record the answers with origin='session'. Durable
+  field-level literature found via theorem_search gets
+  origin='theoremsearch'. New fields get seeded playbooks
+  (origin='seeded'; they stay labeled recalled/unverified until a real
+  proof confirms them).
+
+Respect provenance: entries marked recalled/unverified are candidate
+knowledge, not established fact. Refine existing entries via `entry_id`
+rather than duplicating; entries you contribute are credited to this
+session.
 """
 
 LEAN_PROTOCOL = """
@@ -166,6 +204,30 @@ def _context_block(theorem: dict) -> str:
     return "\n".join(lines)
 
 
+def _field_desc(f: dict) -> str:
+    d = f"{f['primary']['code']} {f['primary']['name']}"
+    if f.get("secondary"):
+        d += f" / {f['secondary']['code']} {f['secondary']['name']}"
+    if f.get("refinement"):
+        d += f" · {f['refinement']}"
+    return d
+
+
+def _field_block(sess: dict) -> str:
+    f = sess.get("field")
+    if not f:
+        return ("\n## Field\n\nNot yet classified — call `set_field` during "
+                "discovery.")
+    from . import knowledge
+    out = f"\n## Field\n\n{_field_desc(f)} (classified by: {f['origin']})"
+    entries = knowledge.entries_for(f["primary"]["code"], f.get("refinement"))
+    if entries:
+        out += "\n\n" + knowledge.format_entries(
+            entries, "## Field playbook (accumulated across sessions — check "
+                     "before re-deriving; contribute back at look-back)")
+    return out
+
+
 def build_system_prompt(sess: dict) -> str:
     t = sess["theorem"]
     parts = [
@@ -189,7 +251,8 @@ def build_system_prompt(sess: dict) -> str:
     ctx = _context_block(t)
     if ctx:
         parts += ["", ctx]
-    parts += [TOOL_PROTOCOL, MODE_CONTRACT]
+    parts.append(_field_block(sess))
+    parts += [TOOL_PROTOCOL, MODE_CONTRACT, KB_CONTRACT]
     from .agent import theoremsearch_available
     from .lean import checker as _lean
     if theoremsearch_available():
@@ -209,6 +272,11 @@ def state_recap(sess: dict) -> str:
     the prior SDK conversation (server restart with stale session id)."""
     lines = ["[Context restore — the proof state so far, rebuilt from disk]",
              f"Session status: {sess['status']}"]
+    if sess.get("field"):
+        lines.append("Field: " + _field_desc(sess["field"]))
+    if sess.get("kb_contributions"):
+        lines.append(f"Knowledge-base contributions so far: "
+                     f"{', '.join(sess['kb_contributions'])}")
     for st in sess["steps"]:
         lines.append(f"- {st['id']} ({st['kind']}, {st['author']}, "
                      f"{st['status']}): {st['statement_tex'][:200]}"
@@ -239,10 +307,11 @@ def action_prompt(sess: dict, action: dict) -> str:
         edited = " (the human just EDITED the statement — prior context was cleared; redo it against the new statement)" \
             if action.get("edited") else ""
         return (f"The theorem statement was submitted{edited}. Run the "
-                "discovery protocol: pin down the statement, record the "
-                "object definitions and the relevant results via the tools, "
-                "and close with a short summary + suggested opening move. "
-                "Do not start proving.")
+                "discovery protocol: pin down the statement, classify the "
+                "field with `set_field` (consult — or seed — the returned "
+                "playbook), record the object definitions and the relevant "
+                "results via the tools, and close with a short summary + "
+                "suggested opening move. Do not start proving.")
     if kind == "check_step":
         step = next(s for s in sess["steps"] if s["id"] == action["step_id"])
         return (f"The human submitted a new proof {_step_line(step)}\n\n"

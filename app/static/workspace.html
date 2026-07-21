@@ -55,6 +55,10 @@
   .chip.theoremsearch { background: color-mix(in srgb, var(--s1) 12%, transparent); color: var(--s1); }
   .chip.map { background: color-mix(in srgb, var(--s2) 12%, transparent); color: var(--s2); }
   .chip.recalled { background: color-mix(in srgb, var(--s3) 14%, transparent); color: var(--s3); }
+  .chip.field { background: color-mix(in srgb, var(--s5) 12%, transparent); color: var(--s5);
+    font-size: 11px; }
+  .chip.verified2 { background: color-mix(in srgb, var(--s2) 12%, transparent); color: var(--s2); }
+  .chip.mine { background: var(--s1); color: #fff; }
 
   /* ------------------- shell: header / main(left|drawer) ------------------- */
   #shell { display: none; grid-template-rows: auto 1fr; height: 100vh; }
@@ -312,6 +316,11 @@
           <div class="cap">objects &amp; definitions — extracted from the statement</div>
           <div id="defList"></div>
         </div>
+        <div class="sect">
+          <div class="cap">field &amp; playbook — accumulated across sessions</div>
+          <div id="fieldLine" style="margin:6px 0 4px"></div>
+          <div id="kbList"></div>
+        </div>
       </div>
       <div class="tabBody" id="tabProof">
         <div class="cap">condensed proof</div>
@@ -406,6 +415,7 @@ let ES = null;             /* EventSource */
 let live = null;           /* streaming agent prose */
 let busy = false;
 let LEAN = {available: false};
+let KB = {code: null, entries: [], nContrib: 0, inflight: false};
 let DEMO = null;
 let coachCursor = 0;
 let drawerAutoOpened = false;   /* auto-open once when discovery lands */
@@ -477,7 +487,7 @@ async function openSession(sid){
       coachCursor = S.guided_cursor || 0;
     } catch (e) { DEMO = null; }
   }
-  if (S.discoveries.length || S.definitions.length) drawerAutoOpened = true;
+  if (S.discoveries.length || S.definitions.length || S.field) drawerAutoOpened = true;
   renderAll();
   connectEvents(sid);
 }
@@ -503,7 +513,7 @@ function connectEvents(sid){
   ES.addEventListener("state_patch", e => {
     S = JSON.parse(e.data).session;
     /* auto-open the drawer the first time discovery results land */
-    if (!drawerAutoOpened && (S.discoveries.length || S.definitions.length)){
+    if (!drawerAutoOpened && (S.discoveries.length || S.definitions.length || S.field)){
       drawerAutoOpened = true;
       document.body.classList.add("drawer-open");
       document.body.dataset.tab = "context";
@@ -555,7 +565,9 @@ function renderHeader(){
   st.title = S.status_note || "";
   const src = S.source.kind === "map_node" ? "from the conjecture map" : "user-entered";
   const c = S.theorem.context;
-  $("hMeta").textContent = [src, c && c.cat, S.mode === "guided" ? "guided demo" : null]
+  $("hMeta").textContent = [src, c && c.cat,
+    S.field && (S.field.primary.code + " " + (S.field.primary.name || "")),
+    S.mode === "guided" ? "guided demo" : null]
     .filter(Boolean).join(" · ");
 }
 
@@ -565,8 +577,9 @@ function renderTheorem(){
   st.textContent = S.status.replace(/_/g, " ");
   tex($("thmStmt"), S.theorem.tex || S.theorem.text || "");
   const nd = S.discoveries.length, nf = S.definitions.length;
-  $("discLine").innerHTML = (nd || nf)
-    ? `🔍 discovered <b>${nd} relevant result${nd === 1 ? "" : "s"}</b> and ` +
+  const fieldBit = S.field ? `classified <b>${esc(S.field.primary.code)}</b> · ` : "";
+  $("discLine").innerHTML = (nd || nf || S.field)
+    ? `🔍 ${fieldBit}discovered <b>${nd} relevant result${nd === 1 ? "" : "s"}</b> and ` +
       `<b>${nf} definition${nf === 1 ? "" : "s"}</b> — see the context drawer →`
     : (busy ? "🔍 discovering relevant results and definitions…" : "");
 }
@@ -650,7 +663,58 @@ function leanBadge(rec){
   return {word: "λ failed", cls: "refuted"};
 }
 
+const KIND_ICON = {technique: "⚙", assumption: "≔", pitfall: "⚠", lemma: "◆",
+                   counterexample_pattern: "✗", literature: "¶"};
+const STATUS_LABEL = {verified: "verified", cited: "literature",
+                      recalled_unverified: "recalled · unverified"};
+
+function renderFieldKB(){
+  const fl = $("fieldLine"), kl = $("kbList");
+  const f = S.field;
+  if (!f){
+    fl.innerHTML = `<span class="dEmpty">${busy ? "classifying…" :
+      "not yet classified"}</span>`;
+    kl.innerHTML = "";
+    return;
+  }
+  fl.innerHTML = `<span class="chip field">${esc(f.primary.code)} — ${esc(f.primary.name || "")}</span>`
+    + (f.secondary ? ` <span class="chip field">${esc(f.secondary.code)} — ${esc(f.secondary.name || "")}</span>` : "")
+    + (f.refinement ? ` <span class="chip">${esc(f.refinement)}</span>` : "");
+  /* fetch playbook when the field changes or this session contributed */
+  const needs = f.primary.code !== KB.code ||
+                (S.kb_contributions || []).length !== KB.nContrib;
+  if (needs && !KB.inflight){
+    KB.inflight = true;
+    api(`/knowledge?code=${encodeURIComponent(f.primary.code)}`)
+      .then(r => { KB = {code: f.primary.code, entries: r.entries,
+                         nContrib: (S.kb_contributions || []).length,
+                         inflight: false};
+                   renderFieldKB(); })
+      .catch(() => { KB.inflight = false; });
+  }
+  kl.innerHTML = KB.entries.length ? "" :
+    '<div class="dEmpty">no playbook entries yet</div>';
+  for (const e of KB.entries){
+    const div = document.createElement("div");
+    div.className = "dItem";
+    const mine = (S.kb_contributions || []).includes(e.id);
+    const st = e.provenance.status;
+    div.innerHTML = `<div class="t"><span>${KIND_ICON[e.kind] || "·"}</span>
+        <span class="tt"></span>
+        <span class="chip">${esc(e.kind.replace(/_/g, " "))}</span>
+        <span class="chip ${st === "verified" ? "verified2" : st === "cited" ? "theoremsearch" : "recalled"}"
+          title="origin: ${esc(e.provenance.origin)}">${esc(STATUS_LABEL[st] || st)}</span>
+        ${mine ? '<span class="chip mine">this session</span>' : ""}</div>
+      ${e.refinement ? `<div class="x" style="font-size:11px;color:var(--ink-muted)">${esc(e.refinement)}</div>` : ""}
+      <div class="x xx"></div>`;
+    tex(div.querySelector(".tt"), e.title);
+    proseHtml(div.querySelector(".xx"), e.body);
+    kl.appendChild(div);
+  }
+}
+
 function renderDrawer(){
+  renderFieldKB();
   /* -- context tab -- */
   const dl = $("discList");
   dl.innerHTML = S.discoveries.length ? "" :

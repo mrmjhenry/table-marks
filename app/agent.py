@@ -34,7 +34,7 @@ from claude_agent_sdk import (AssistantMessage, ClaudeAgentOptions,
                               StreamEvent, TextBlock, ToolUseBlock,
                               create_sdk_mcp_server, tool)
 
-from . import prompts, store
+from . import knowledge, prompts, store
 from .lean import checker as lean_checker, lean_result_word
 from .store import ROOT, now_iso
 
@@ -49,6 +49,8 @@ ALLOWED_TOOLS = [
     "mcp__proof__set_status",
     "mcp__proof__record_discovery", "mcp__proof__record_definition",
     "mcp__proof__set_report_narrative",
+    "mcp__proof__set_field", "mcp__proof__record_knowledge",
+    "mcp__proof__query_knowledge",
 ]
 
 THEOREMSEARCH_MCP = "https://api.theoremsearch.com/mcp"
@@ -392,6 +394,106 @@ def make_proof_server(runner: "ProofRunner"):
         commit()
         return _text(f"session status -> {a['status']}")
 
+    @tool("set_field",
+          "Classify this session's mathematical field: 1-2 MSC 2020 codes "
+          "(five-char, most specific that genuinely fits, e.g. '11B25') plus "
+          "an optional free-text refinement below the leaf (e.g. "
+          "'Szemerédi-type density arguments'). Returns the field playbook — "
+          "prior knowledge accumulated for this field — or a seeding "
+          "instruction when the field is new.",
+          {"type": "object",
+           "properties": {
+               "primary": {"type": "string"},
+               "secondary": {"type": "string"},
+               "refinement": {"type": "string"}},
+           "required": ["primary"]})
+    @guarded
+    def set_field(a):
+        f = store.set_field(sess(), primary=a["primary"],
+                            secondary=a.get("secondary"),
+                            refinement=a.get("refinement"))
+        commit()
+        head = (f"field set: {f['primary']['code']} {f['primary']['name']}"
+                + (f" / {f['secondary']['code']} {f['secondary']['name']}"
+                   if f.get("secondary") else "")
+                + (f" · {f['refinement']}" if f.get("refinement") else ""))
+        entries = knowledge.entries_for(f["primary"]["code"], f.get("refinement"))
+        if entries:
+            return _text(head + "\n\n" +
+                         knowledge.format_entries(entries, "## Field playbook "
+                                                  "(check before re-deriving; "
+                                                  "refine via entry_id)"))
+        sub = knowledge.kb_file_code(f["primary"]["code"])
+        return _text(head + f"\n\nNo playbook exists yet for {sub} — seed one "
+                     "now: 3-6 record_knowledge(origin='seeded') entries "
+                     "covering the field's standard techniques, default "
+                     "assumptions, and known pitfalls (they will be labeled "
+                     "recalled/unverified until confirmed by real proofs).")
+
+    @tool("record_knowledge",
+          "Write to the persistent field knowledge base (shared across all "
+          "sessions). origin: 'session' for what THIS proof actually "
+          "established (look-back), 'seeded' for recalled playbook material, "
+          "'theoremsearch' for durable literature hits. Pass entry_id to "
+          "refine an existing entry instead of duplicating it.",
+          {"type": "object",
+           "properties": {
+               "code": {"type": "string",
+                        "description": "MSC code the knowledge belongs to"},
+               "kind": {"enum": ["technique", "assumption", "pitfall", "lemma",
+                                 "counterexample_pattern", "literature"]},
+               "title": {"type": "string"},
+               "body": {"type": "string",
+                        "description": "one short paragraph; markdown + $LaTeX$"},
+               "refinement": {"type": "string"},
+               "origin": {"enum": ["session", "seeded", "theoremsearch"]},
+               "status": {"enum": ["verified", "recalled_unverified", "cited"]},
+               "entry_id": {"type": "string"}},
+           "required": ["code", "kind", "title", "body", "origin"]})
+    @guarded
+    def record_knowledge(a):
+        entry, created = knowledge.add_entry(
+            a["code"], kind=a["kind"], title=a["title"], body=a["body"],
+            origin=a["origin"], session_id=runner.sid,
+            refinement=a.get("refinement"), status=a.get("status"),
+            entry_id=a.get("entry_id"))
+        if not created and not a.get("entry_id"):
+            return _text(f"already known as {entry['id']} "
+                         f"(“{entry['title']}”) — pass entry_id to refine it")
+        s = sess()
+        if entry["id"] not in s["kb_contributions"]:
+            s["kb_contributions"].append(entry["id"])
+        commit()
+        verb = "recorded" if created else "refined"
+        return _text(f"{verb} {entry['id']} in knowledge/"
+                     f"{knowledge.kb_file_code(entry['code'])}.json")
+
+    @tool("query_knowledge",
+          "Look up the field knowledge base: give an MSC code (hierarchy-"
+          "walked leaf → subclass → class) and/or a free-text query, "
+          "optionally filtered by kind.",
+          {"type": "object",
+           "properties": {
+               "code": {"type": "string"},
+               "query": {"type": "string"},
+               "kind": {"enum": ["technique", "assumption", "pitfall", "lemma",
+                                 "counterexample_pattern", "literature"]}},
+           "required": []})
+    @guarded
+    def query_knowledge(a):
+        code, query = a.get("code"), a.get("query")
+        if not code and not query:
+            raise ValueError("give code and/or query")
+        if query:
+            entries = knowledge.search(query, code=code, kind=a.get("kind"))
+        else:
+            entries = knowledge.entries_for(code)
+            if a.get("kind"):
+                entries = [e for e in entries if e["kind"] == a["kind"]]
+        head = "## Knowledge base" + (f" — {code} (walked leaf→subclass→class)"
+                                      if code and not query else "")
+        return _text(knowledge.format_entries(entries, head))
+
     @tool("set_report_narrative",
           "Set the narrative for the final proof report and build the report "
           "file. Only callable once the Lean assembly is machine-checked. "
@@ -417,6 +519,7 @@ def make_proof_server(runner: "ProofRunner"):
 
     tools = [add_step, update_step, log_evidence, report_counterexample,
              set_status, record_discovery, record_definition,
+             set_field, record_knowledge, query_knowledge,
              set_report_narrative]
 
     if lean_checker.available:

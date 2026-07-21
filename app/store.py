@@ -106,6 +106,8 @@ def create_session(*, source_kind: str, node_id: str | None = None,
         "theorem": theorem,
         "status": "in_progress",
         "status_note": None,
+        "field": None,
+        "kb_contributions": [],
         "steps": [],
         "discoveries": [],
         "definitions": [],
@@ -118,9 +120,39 @@ def create_session(*, source_kind: str, node_id: str | None = None,
         "counters": {"step": 0, "evidence": 0, "cx": 0, "turn": 0,
                      "disc": 0, "def": 0},
     }
+    # map-node sessions: provisional field from the node's MSC codes
+    # (the agent confirms/corrects during discovery)
+    if source_kind == "map_node" and (theorem.get("context") or {}).get("msc"):
+        from . import fields
+        codes = fields.validate(theorem["context"]["msc"])
+        if codes:
+            sess["field"] = _field_record(codes, refinement=None,
+                                          origin="map_seed")
     workspace_dir(sess["id"]).mkdir(parents=True, exist_ok=True)
     save_session(sess)
     return sess
+
+
+def _field_record(codes: list[str], *, refinement: str | None,
+                  origin: str) -> dict:
+    from . import fields
+    mk = lambda c: {"code": c, "name": fields.name_of(c)}
+    return {"primary": mk(codes[0]),
+            "secondary": mk(codes[1]) if len(codes) > 1 else None,
+            "refinement": refinement, "origin": origin, "set_at": now_iso()}
+
+
+def set_field(sess: dict, *, primary: str, secondary: str | None = None,
+              refinement: str | None = None) -> dict:
+    """Classify the session's field with validated MSC codes."""
+    from . import fields
+    codes = fields.validate([c for c in (primary, secondary) if c])
+    if not codes:
+        raise ValueError(f"no valid MSC code in {primary!r}/{secondary!r}")
+    sess["field"] = _field_record(codes,
+                                  refinement=(refinement or "").strip() or None,
+                                  origin="agent")
+    return sess["field"]
 
 
 def save_session(sess: dict) -> None:
@@ -141,6 +173,8 @@ def load_session(sid: str) -> dict | None:
     sess.setdefault("discoveries", [])
     sess.setdefault("definitions", [])
     sess.setdefault("report", None)
+    sess.setdefault("field", None)
+    sess.setdefault("kb_contributions", [])
     sess["counters"].setdefault("disc", 0)
     sess["counters"].setdefault("def", 0)
     return sess
@@ -298,9 +332,11 @@ def add_definition(sess: dict, *, term: str, definition: str) -> dict:
 
 
 def clear_context(sess: dict) -> None:
-    """Drop discoveries/definitions (theorem was edited; they'll be redone)."""
+    """Drop discoveries/definitions/field (theorem was edited; the queued
+    re-discover turn rebuilds them, re-classifying from scratch)."""
     sess["discoveries"] = []
     sess["definitions"] = []
+    sess["field"] = None
 
 
 def set_status(sess: dict, status: str, note: str | None = None) -> None:
