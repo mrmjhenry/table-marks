@@ -35,7 +35,8 @@ open http://127.0.0.1:8765/
 
 Environment knobs: `PROOF_AGENT_MODEL=claude-sonnet-5` (or any model id)
 overrides the agent model; `PROOF_STUB_AGENT=1` runs a no-API stub for UI
-development.
+development; `PROOF_KB_DIR` points the knowledge base somewhere else
+(tests use a temp dir so the committed `knowledge/` stays clean).
 
 ## The workspace
 
@@ -48,6 +49,10 @@ compound messages, and checks every step before grading it.
 **Discovery.** Submitting a theorem triggers a discovery pass that populates a
 hideable drawer:
 
+- *Field & playbook* — the agent classifies the theorem granularly
+  (validated MSC 2020 codes from the vendored taxonomy, plus a free-text
+  refinement below the leaf) and pulls the accumulated **field playbook**
+  from the knowledge base (below).
 - *Relevant results* — theorems, lemmas, and conjectures gathered from
   [TheoremSearch](https://github.com/uw-math-ai/TheoremSearch) (semantic
   search over ~9M theorems, wired in as a remote MCP server), from the
@@ -59,7 +64,20 @@ hideable drawer:
 
 The drawer's second tab is the **condensed proof**: graded step rows, the
 evidence log (every check the agent ran, linked to its saved script),
-counterexample cards, and Lean generation.
+counterexample cards, and Lean generation. Once the Lean assembly is
+machine-checked, a **generate report** button produces a self-contained
+HTML write-up (agent narrative + provenance section, with the proof,
+context, Lean code, and full transcript assembled mechanically from the
+session record).
+
+**The knowledge base** (`knowledge/`, committed — curated via ordinary git
+diffs). A cross-session store of field-specific techniques, assumptions,
+pitfalls, lemmas, counterexample patterns, and literature, filed by MSC
+subclass. Entries carry provenance: `session` (what a real proof
+established — recorded at the skill's look-back), `seeded` (agent-recalled
+playbook material, labeled unverified until confirmed), `theoremsearch`
+(literature hits). Each new session in a field receives the playbook
+automatically and contributes back what it learns.
 
 **Grading discipline.** The agent runs on the Claude Agent SDK with a
 `prove-conjecture` skill distilled from published research on how
@@ -111,16 +129,21 @@ OpenConjecture similarity for arbitrary statements, TheoremSearch, Lean
 checking, plus three skills (`math-prover:prove-conjecture`,
 `math-prover:math-context` for the discovery pass,
 `math-prover:proof-report` for write-ups) and the `lean-formalizer` agent.
-Install/update: `python3 plugin/install.py` (copies to
-`~/.claude/skills/math-prover/`; auto-loads in every session). The plugin
-is machine-bound — it points at this repo's venv, `data/`, and `lean/`.
+Full installation guide: **[PLUGIN_INSTALL.md](PLUGIN_INSTALL.md)**. The
+plugin is machine-bound — it points at this repo's venv, `data/`, and
+`lean/`.
 
 ## Repository layout
 
 ```
 app/                                 the workspace: FastAPI server, agent runner
-                                     (Claude Agent SDK), Lean checker, single-file
+                                     (Claude Agent SDK), Lean checker, stdio MCP
+                                     server for the plugin, single-file
                                      vanilla-JS frontend, sqrt2 guided demo
+knowledge/                           committed — the cross-session field
+                                     knowledge base (playbooks per MSC subclass)
+plugin/                              the math-prover Claude Code plugin
+                                     (see PLUGIN_INSTALL.md)
 .claude/skills/prove-conjecture/     the proving skill: workflow, verification
                                      protocol, failure catalog, script templates
 .claude/agents/lean-formalizer.md    the Lean formalization subagent

@@ -17,7 +17,8 @@
   `/api/sessions/{sid}/events` SSE.
 - `PROOF_STUB_AGENT=1` swaps in a no-API stub agent — use it for all UI work
   and tests. `PROOF_AGENT_MODEL=claude-sonnet-5` keeps live agent tests fast
-  and cheap.
+  and cheap. `PROOF_KB_DIR=<tmpdir>` for any test that writes knowledge —
+  never let tests dirty the committed `knowledge/`.
 - **UI testing:** headless Playwright (installed in the venv) against a stub
   server on a spare port. Drive the real page; don't unit-test the HTML.
   Screenshots catch rendering bugs (e.g. prose accidentally KaTeX-rendered)

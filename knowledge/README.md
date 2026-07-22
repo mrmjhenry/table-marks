@@ -38,3 +38,7 @@ material — treat as unverified citations until checked; `theoremsearch`
 entries cache literature hits. The workspace injects a capped, hierarchy-
 walked selection (leaf → subclass → class) into each session's context and
 exposes `query_knowledge` for on-demand lookups.
+
+Two writers share this store: workspace sessions (`session_ids` like
+`s_20260721_…`) and Claude Code sessions via the math-prover plugin
+(`cli-YYYYMMDD`). Writes are atomic per file, last-write-wins.

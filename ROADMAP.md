@@ -103,7 +103,10 @@ Best done last, once item 2 settles the pipeline's final shape.
 ## Proof workspace
 
 The interactive proving app (`app/`, documented in the README) shipped in nine
-steps. Follow-on ideas:
+steps, followed by: the chat-first UI redesign with the context/proof drawer
+and TheoremSearch discovery, the final-report generator, field recognition +
+the persistent knowledge base (`knowledge/`), and the math-prover Claude Code
+plugin (W5). Remaining follow-on ideas below.
 
 ### W1. Landing page — ✅ shipped (2026-07)
 
