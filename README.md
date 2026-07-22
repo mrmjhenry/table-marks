@@ -103,6 +103,18 @@ cd lean && lake exe cache get     # pinned toolchain + prebuilt Mathlib (~5 GB)
 Without the toolchain everything else works; the Lean UI stays hidden
 (`GET /api/lean/status` reports availability).
 
+**Claude Code plugin (`math-prover`).** The workspace's capabilities are
+also available inside Claude Code, in any project, via a personal plugin:
+MSC classification aids, the shared field knowledge base (same
+`knowledge/` files — CLI writes are attributed `cli-YYYYMMDD`),
+OpenConjecture similarity for arbitrary statements, TheoremSearch, Lean
+checking, plus three skills (`math-prover:prove-conjecture`,
+`math-prover:math-context` for the discovery pass,
+`math-prover:proof-report` for write-ups) and the `lean-formalizer` agent.
+Install/update: `python3 plugin/install.py` (copies to
+`~/.claude/skills/math-prover/`; auto-loads in every session). The plugin
+is machine-bound — it points at this repo's venv, `data/`, and `lean/`.
+
 ## Repository layout
 
 ```

@@ -111,6 +111,14 @@ Resolved by the chat-first redesign: `/` is now the workspace entry page
 (theorem box + session list + links to the map at `/openconjectures` and the
 guided √2 demo). No separate landing page needed.
 
+### W5. Claude Code plugin — ✅ shipped (2026-07)
+
+`plugin/` (`math-prover`): the workspace's capabilities inside Claude Code
+in any project — MSC aids, shared knowledge base, OpenConjecture
+similarity, TheoremSearch, Lean checking, three skills, the lean-formalizer
+agent. Machine-bound by design; installed via `plugin/install.py` to
+`~/.claude/skills/math-prover/`.
+
 ### W2. Export the whole proof as Lean
 
 `assemble_lean` already has the agent chain the per-step lemmas into a final

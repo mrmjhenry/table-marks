@@ -54,6 +54,14 @@
   `setting_sources=["project"]`; editing the skill changes workspace agent
   behavior with no code change. TheoremSearch is a remote MCP server
   (`https://api.theoremsearch.com/mcp`), reachability-probed at runner start.
+- **The math-prover plugin** (`plugin/`) re-exposes these capabilities to
+  Claude Code in any project via `app/mcp_server.py` (stdio, import-light —
+  never add fastapi/SDK imports at its top level). After editing anything
+  under `plugin/`, rerun `python3 plugin/install.py`. The project
+  prove-conjecture skill is authoritative; mirror edits into
+  `plugin/skills/prove-conjecture/` (minus its four repo-coupled prose
+  spots). The workspace agent never loads plugins — `knowledge/` is the
+  only surface shared between workspace and CLI.
 
 ## Costs
 

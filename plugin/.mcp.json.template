@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "proof": {
+      "command": "{{REPO_ROOT}}/.venv/bin/python",
+      "args": ["-m", "app.mcp_server"],
+      "env": {
+        "PYTHONPATH": "{{REPO_ROOT}}",
+        "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+      }
+    },
+    "theoremsearch": {
+      "type": "http",
+      "url": "https://api.theoremsearch.com/mcp"
+    }
+  }
+}

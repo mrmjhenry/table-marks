@@ -1,0 +1,5 @@
+{
+  "name": "math-prover",
+  "version": "0.1.0",
+  "description": "Prove theorems with full context tooling: MSC classification, a shared field knowledge base, OpenConjecture map similarity, TheoremSearch, and Lean 4 / Mathlib checking. Machine-bound to the math_geneology repo (its data, Lean toolchain, and venv)."
+}
