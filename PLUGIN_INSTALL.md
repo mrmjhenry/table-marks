@@ -77,6 +77,10 @@ Knowledge-base writes from Claude Code sessions land in this repo's
 workspace reads and writes, so what you learn in either surface benefits
 both.
 
+For the full end-to-end process this plugin supports (sign-off gates,
+working modes, spoiler policy, Lean discipline, per-problem artifacts), see
+**[PROOF_WORKFLOW.md](PROOF_WORKFLOW.md)**.
+
 ## Uninstall
 
 ```bash

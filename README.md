@@ -133,6 +133,16 @@ Full installation guide: **[PLUGIN_INSTALL.md](PLUGIN_INSTALL.md)**. The
 plugin is machine-bound — it points at this repo's venv, `data/`, and
 `lean/`.
 
+**[PROOF_WORKFLOW.md](PROOF_WORKFLOW.md)** documents the end-to-end process
+built on top of the plugin: the prove-conjecture protocol wrapped in a
+learning-oriented shell — human sign-off gates, working modes (step-by-step
+/ subgoal split / full solve), a spoiler policy, incremental Lean
+formalization, model escalation, and a per-problem artifact contract
+(`report.md` + `meta.json` + a visualization-first PDF explainer). It is
+written to be replicable elsewhere; its artifact-tree conventions
+(`one-offs/`, `build.sh`, chapter styles) describe the downstream materials
+repos that consume the plugin, not this one.
+
 ## Repository layout
 
 ```
@@ -152,6 +162,9 @@ conjecture_map.html                  the map (self-contained; open in a browser)
 templates/viz.html                   map template (canvas force layout)
 scripts/00…11_*.py                   the map's data pipeline (see § Reproducing)
 openconjecture_data_dictionary.pdf   data dictionary for the source dataset
+PLUGIN_INSTALL.md                    installing the math-prover plugin
+PROOF_WORKFLOW.md                    the end-to-end proof process built on
+                                     the plugin (gates, modes, artifacts)
 ROADMAP.md                           shipped scorecard + what remains
 demo.mp4                             the demo video
 data/                                gitignored — pipeline intermediates. Kept
